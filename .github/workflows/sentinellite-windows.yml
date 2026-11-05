@@ -48,47 +48,7 @@ jobs:
         run: go test -count=1 -v ./...
 
       - name: Bounded scanner microbenchmarks
-        run: go test -run '^        run: |
-          $exe = Join-Path $env:RUNNER_TEMP 'SentinelLite-built.exe'
-          go build -trimpath -ldflags '-s -w -H windowsgui' -o $exe .
-          if ($LASTEXITCODE -ne 0 -or !(Test-Path $exe)) { throw 'Windows executable build failed' }
-          Get-FileHash -Algorithm SHA256 $exe | Format-List
-
-      - name: Smoke-test built and uploaded executables
-        run: |
-          function Test-Launch([string]$exe) {
-            if (!(Test-Path $exe)) { throw "Missing executable: $exe" }
-            Write-Host "Launching $exe"
-            $app = Start-Process -FilePath $exe -WorkingDirectory $env:RUNNER_TEMP -PassThru
-            try {
-              $ready = $false
-              for ($i = 0; $i -lt 20; $i++) {
-                Start-Sleep -Seconds 1
-                $app.Refresh()
-                if ($app.HasExited) { throw "Application exited unexpectedly: $exe" }
-                $listener = Get-NetTCPConnection -State Listen -OwningProcess $app.Id -ErrorAction SilentlyContinue |
-                  Where-Object { $_.LocalAddress -eq '127.0.0.1' } |
-                  Select-Object -First 1
-                if ($null -ne $listener) {
-                  $url = "http://127.0.0.1:$($listener.LocalPort)/app/"
-                  $reply = Invoke-WebRequest -Uri $url -SkipHttpErrorCheck -TimeoutSec 5
-                  if ($reply.StatusCode -ne 403) {
-                    throw "Expected access token requirement (HTTP 403); received $($reply.StatusCode)"
-                  }
-                  Write-Host "PASS: loopback listener and token enforcement for $exe"
-                  $ready = $true
-                  break
-                }
-              }
-              if (-not $ready) { throw "No local listener detected within 20 seconds: $exe" }
-            }
-            finally {
-              Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
-            }
-          }
-          Test-Launch (Join-Path $env:RUNNER_TEMP 'SentinelLite-built.exe')
-          Test-Launch (Join-Path $env:GITHUB_WORKSPACE 'SentinelLite.exe')
- -bench '^BenchmarkInspect' -benchmem -benchtime=300ms ./...
+        run: go test -run '^$' -bench '^BenchmarkInspect' -benchmem -benchtime=300ms ./...
 
       - name: Build fresh Windows executable
         run: |
