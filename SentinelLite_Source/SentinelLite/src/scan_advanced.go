@@ -1,0 +1,101 @@
+package main
+
+import (
+ "archive/zip"
+ "bytes"
+ "encoding/binary"
+ "io"
+ "path/filepath"
+ "strings"
+ "unicode/utf16"
+)
+
+// Confirm NT signature, not just the MZ prefix.
+func isPEHeader(b []byte) bool {
+ if len(b)<68 || b[0]!='M' || b[1]!='Z' {return false}
+ off:=binary.LittleEndian.Uint32(b[0x3c:0x40])
+ return off>=0x40 && uint64(off)+4<=uint64(len(b)) && bytes.Equal(b[off:off+4],[]byte{'P','E',0,0})
+}
+func isDocumentOrImage(ext string) bool {
+ switch ext {case ".jpg",".jpeg",".png",".gif",".webp",".pdf",".txt": return true}
+ return false
+}
+func isZIPContainer(ext string) bool {
+ switch ext {case ".zip",".jar",".docx",".xlsx",".pptx",".docm",".xlsm",".pptm":return true}
+ return false
+}
+func decodeScriptText(b []byte) string {
+ if len(b)<2 {return string(b)}
+ little:=true
+ payload:=b
+ if b[0]==0xff && b[1]==0xfe {payload=b[2:]} else if b[0]==0xfe && b[1]==0xff {little=false;payload=b[2:]} else {
+  if len(b)<24 {return string(b)}
+  pairs:=len(b)/2
+  if pairs>128 {pairs=128}
+  le,be:=0,0
+  for i:=0;i<pairs*2;i+=2 {
+   if b[i+1]==0 && b[i]>=0x20 && b[i]<=0x7e {le++}
+   if b[i]==0 && b[i+1]>=0x20 && b[i+1]<=0x7e {be++}
+  }
+  if le*100>=pairs*70 {little=true} else if be*100>=pairs*70 {little=false} else {return string(b)}
+ }
+ words:=make([]uint16,0,len(payload)/2)
+ for i:=0;i+1<len(payload);i+=2 {
+  if little {words=append(words,binary.LittleEndian.Uint16(payload[i:i+2]))} else {words=append(words,binary.BigEndian.Uint16(payload[i:i+2]))}
+ }
+ return string(utf16.Decode(words))
+}
+func hasMisleadingBidiControls(name string) bool {
+ return strings.ContainsAny(name,"\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069")
+}
+// No archive entry is executed or extracted to disk; bound both depth and reads.
+func inspectZIP(p string,score *int,reasons *[]string) {
+ zr,err:=zip.OpenReader(p);if err!=nil{return};defer zr.Close()
+ budget:=int64(2*1024*1024)
+ inspectArchiveEntries(zr.File,0,&budget,score,reasons)
+}
+func inspectArchiveEntries(files []*zip.File,depth int,budget *int64,score *int,reasons *[]string) bool {
+ const maxEntries=1500
+ const maxEntryBytes=int64(128*1024)
+ const maxNestedBytes=int64(512*1024)
+ for i,file:=range files {
+  if i>=maxEntries || *budget<=0 {break}
+  if file.FileInfo().IsDir(){continue}
+  name:=truncate(file.Name,120)
+  ext:=strings.ToLower(filepath.Ext(file.Name))
+  if doubleExt.MatchString(filepath.Base(file.Name)){
+   *score+=65;*reasons=append(*reasons,"Archive contains disguised executable: "+name);return true
+  }
+  nested:=depth<1 && isZIPContainer(ext)
+  if !nested && !scriptExtensions[ext] && !isDocumentOrImage(ext){continue}
+  if file.CompressedSize64>16*1024*1024 {continue}
+  limit:=maxEntryBytes
+  if nested {limit=maxNestedBytes}
+  if limit>*budget {limit=*budget}
+  rc,err:=file.Open();if err!=nil{continue}
+  buf,readErr:=io.ReadAll(io.LimitReader(rc,limit));_ = rc.Close()
+  *budget-=int64(len(buf));if readErr!=nil{continue}
+  if nested {
+   if int64(len(buf))!=int64(file.UncompressedSize64){continue}
+   z,err:=zip.NewReader(bytes.NewReader(buf),int64(len(buf)))
+   if err==nil && inspectArchiveEntries(z.File,depth+1,budget,score,reasons){return true}
+   continue
+  }
+  if bytes.Contains(buf,eicar){
+   *score+=110;*reasons=append(*reasons,"Archive contains harmless EICAR test signature: "+name);return true
+  }
+  if isDocumentOrImage(ext)&&isPEHeader(buf){
+   *score+=80;*reasons=append(*reasons,"Archive document/image contains PE header: "+name);return true
+  }
+  if scriptExtensions[ext]{
+   partialScore:=0;partialReasons:=[]string{}
+   inspectScript(buf,&partialScore,&partialReasons)
+   if partialScore>=40 {
+    *score+=partialScore
+    for _,r:=range partialReasons{*reasons=append(*reasons,"Archive entry "+name+": "+r)}
+    return true
+   }
+  }
+ }
+ return false
+}
