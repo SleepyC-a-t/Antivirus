@@ -31,12 +31,22 @@ type Finding struct {
 	ReviewSHA256 string `json:"-"`
 }
 
+type SkippedPath struct {
+	Path string `json:"path"`
+	Reason string `json:"reason"`
+}
+
+// A practical safety ceiling for pathological filesystems; any excess is
+// explicitly counted in status.skipLogOmitted, not silently discarded.
+const maxSkippedPathRecords = 100000
+
 type Status struct {
 	Active   bool      `json:"active"`
 	Mode     string    `json:"mode"`
 	Current  string    `json:"current"`
 	Files    int64     `json:"files"`
 	Skipped  int64     `json:"skipped"`
+	SkipLogOmitted int64 `json:"skipLogOmitted"`
 	Findings int       `json:"findings"`
 	Omitted int64 `json:"omitted"`
 	Started  time.Time `json:"started"`
@@ -53,6 +63,8 @@ type App struct {
 	busy       bool
 	files      int64
 	skipped    int64
+	skippedPaths []SkippedPath
+	skipLogOmitted int64
 	omitted int64
 }
 
@@ -88,6 +100,7 @@ func (a *App) snapshot() (Status, []Finding) {
 	s.Files = atomic.LoadInt64(&a.files)
 	s.Skipped = atomic.LoadInt64(&a.skipped)
 	s.Omitted = atomic.LoadInt64(&a.omitted)
+	s.SkipLogOmitted = a.skipLogOmitted
 	fs := make([]Finding, 0, len(a.order))
 	for _, id := range a.order {
 		fs = append(fs, a.findings[id])
@@ -108,6 +121,8 @@ func (a *App) begin(mode string) (context.Context, error) {
 	atomic.StoreInt64(&a.skipped, 0)
 	atomic.StoreInt64(&a.omitted, 0)
 	a.order = nil
+	a.skippedPaths = nil
+	a.skipLogOmitted = 0
 	a.status = Status{Active: true, Mode: mode, Started: time.Now()}
 	a.cancel = cancel
 	return ctx, nil
@@ -133,7 +148,23 @@ func (a *App) stop() {
 	}
 }
 func (a *App) incrFiles()          { atomic.AddInt64(&a.files, 1) }
-func (a *App) incrSkipped()        { atomic.AddInt64(&a.skipped, 1) }
+// Record skipped paths and reasons for the JSON report. The count is always
+// complete even if an extreme number of records exhaust the safety cap.
+func (a *App) recordSkip(path, reason string) {
+    a.mu.Lock()
+    defer a.mu.Unlock()
+    atomic.AddInt64(&a.skipped, 1)
+    if len(a.skippedPaths) < maxSkippedPathRecords {
+        a.skippedPaths = append(a.skippedPaths, SkippedPath{Path: path, Reason: reason})
+    } else {
+        a.skipLogOmitted++
+    }
+}
+func (a *App) skippedSnapshot() []SkippedPath {
+    a.mu.RLock()
+    defer a.mu.RUnlock()
+    return append([]SkippedPath{}, a.skippedPaths...)
+}
 func (a *App) setCurrent(p string) { a.mu.Lock(); a.status.Current = p; a.mu.Unlock() }
 
 func scanRoots(mode, custom string) ([]string, error) {
@@ -192,62 +223,70 @@ func scanRoots(mode, custom string) ([]string, error) {
 	return out, nil
 }
 
-// Walk without following links, reparse-point junctions, or other redirected directories.
+// Walk without following symbolic links or Windows reparse points. The
+// detailed path is used by the scanner; the compatibility wrapper preserves
+// the original test/helper API.
 func walkNoLinks(ctx context.Context, root string, emit func(string)) (int64, error) {
-	stat, err := os.Lstat(root)
-	if err != nil {
-		return 1, err
-	}
-	if (stat.Mode()&os.ModeSymlink) != 0 || isReparse(root) {
-		return 1, nil
-	}
-	if !stat.IsDir() {
-		emit(root)
-		return 0, nil
-	}
-	stack := []string{root}
-	var skipped int64
-	for len(stack) > 0 {
-		if ctx.Err() != nil {
-			return skipped, ctx.Err()
-		}
-		dir := stack[len(stack)-1]
-		stack = stack[:len(stack)-1]
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			skipped++
-			continue
-		}
-		for _, ent := range entries {
-			if ctx.Err() != nil {
-				return skipped, ctx.Err()
-			}
-			p := filepath.Join(dir, ent.Name())
-			if (ent.Type()&os.ModeSymlink) != 0 || isReparse(p) {
-				skipped++
-				continue
-			}
-			if ent.IsDir() {
-				if shouldSkipDir(p) {
-					skipped++
-					continue
-				}
-				stack = append(stack, p)
-			} else if ent.Type().IsRegular() || ent.Type() == 0 {
-				emit(p)
-			}
-		}
-	}
-	return skipped, nil
+    return walkNoLinksDetailed(ctx, root, emit, nil)
+}
+func walkNoLinksDetailed(ctx context.Context, root string, emit func(string), onSkip func(string,string)) (int64,error) {
+    var skipped int64
+    skip:=func(path,why string) {
+        skipped++
+        if onSkip!=nil { onSkip(path,why) }
+    }
+    stat,err:=os.Lstat(root)
+    if err!=nil { skip(root,"metadata access failed: "+err.Error());return skipped,err }
+    if stat.Mode()&os.ModeSymlink!=0 || isReparse(root) {
+        skip(root,"symbolic link or reparse point: not followed for safety")
+        return skipped,nil
+    }
+    if !stat.IsDir() {
+        if !stat.Mode().IsRegular() {skip(root,"not a regular file");return skipped,nil}
+        emit(root);return skipped,nil
+    }
+    stack:=[]string{root}
+    for len(stack)>0 {
+        if ctx.Err()!=nil{return skipped,ctx.Err()}
+        dir:=stack[len(stack)-1]
+        stack=stack[:len(stack)-1]
+        entries,err:=os.ReadDir(dir)
+        if err!=nil && !errors.Is(err,os.ErrPermission) {
+            // One bounded retry helps with short-lived sharing violations.
+            time.Sleep(20*time.Millisecond)
+            entries,err=os.ReadDir(dir)
+        }
+        if err!=nil {skip(dir,"directory listing failed: "+err.Error());continue}
+        for _,ent:=range entries {
+            if ctx.Err()!=nil{return skipped,ctx.Err()}
+            p:=filepath.Join(dir,ent.Name())
+            if ent.Type()&os.ModeSymlink!=0 || isReparse(p) {
+                skip(p,"symbolic link or reparse point: not followed for safety")
+                continue
+            }
+            if ent.IsDir() {
+                if shouldSkipDir(p) {
+                    skip(p,"SentinelGuard quarantine directory: intentionally excluded")
+                    continue
+                }
+                stack=append(stack,p)
+            } else if ent.Type().IsRegular() || ent.Type()==0 {
+                emit(p)
+            } else {
+                skip(p,"not a regular file (device, socket, or special entry)")
+            }
+        }
+    }
+    return skipped,nil
 }
 
+// Exclude only our own quarantine storage, not every unrelated folder named
+// SentinelLite. The old basename-only exclusion silently missed whole trees.
 func shouldSkipDir(p string) bool {
-	lower := strings.ToLower(filepath.Base(p))
-	// Quarantined content must not be examined or handled by the scanner.
-	if lower == "sentinellite" {
-		return true
-	}
-	return false
+    config:=os.Getenv("LOCALAPPDATA")
+    if config=="" { config,_=os.UserConfigDir() }
+    if config=="" {return false}
+    return strings.EqualFold(filepath.Clean(p),filepath.Clean(filepath.Join(config,"SentinelLite")))
 }
 
 func (a *App) runHeuristic(ctx context.Context, mode, custom string) error {
@@ -273,12 +312,18 @@ func (a *App) runHeuristic(ctx context.Context, mode, custom string) error {
 					continue
 				}
 				info, err := os.Lstat(p)
-				if err != nil || !info.Mode().IsRegular() {
-					a.incrSkipped()
-					continue
-				}
-				a.incrFiles()
-				f := inspectFile(p, info)
+				if err != nil {
+                    a.recordSkip(p,"file metadata failed: "+err.Error())
+                    continue
+                }
+                if !info.Mode().IsRegular() || isReparse(p) {
+                    a.recordSkip(p,"not a regular file or changed to a reparse point")
+                    continue
+                }
+                a.incrFiles()
+                f := inspectFileDetailed(p, info, func(reason string) {
+                    a.recordSkip(p,reason)
+                })
 				if f != nil {
 					a.add(*f)
 				}
@@ -298,13 +343,12 @@ func (a *App) runHeuristic(ctx context.Context, mode, custom string) error {
 			continue
 		}
 		seen[strings.ToLower(root)] = struct{}{}
-		skipped, e := walkNoLinks(ctx, root, func(p string) {
+		_, e := walkNoLinksDetailed(ctx, root, func(p string) {
 			select {
 			case jobs <- p:
 			case <-ctx.Done():
 			}
-		})
-		atomic.AddInt64(&a.skipped, skipped)
+		}, a.recordSkip)
 		if e != nil {
 			aborted = e
 			break
@@ -328,6 +372,9 @@ var executeScriptPattern = regexp.MustCompile(`(?i)\b(?:iex|invoke-expression)\b
 var pipeInterpreterPattern = regexp.MustCompile(`(?i)\b(?:curl(?:\.exe)?|wget(?:\.exe)?)\s+[^\r\n|]{0,500}https?://[^\s|]+[^\r\n]{0,200}\|\s*(?:powershell(?:\.exe)?|pwsh(?:\.exe)?|cmd(?:\.exe)?)\b`)
 
 func inspectFile(p string, info os.FileInfo) *Finding {
+    return inspectFileDetailed(p, info, nil)
+}
+func inspectFileDetailed(p string, info os.FileInfo, onReadError func(string)) *Finding {
 	name := filepath.Base(p)
 	ext := strings.ToLower(filepath.Ext(name))
 	lower := strings.ToLower(p)
@@ -367,26 +414,34 @@ func inspectFile(p string, info os.FileInfo) *Finding {
 		add(22, "Executable or library within roaming application data (can be legitimate)")
 	}
 
-	inspectContent := isThreatScriptExtension(ext) || ext==".html" || ext==".htm" || ext==".sys" || scriptExtensions[ext] || executableExtensions[ext] || isDocumentOrImage(ext) || ext == ".lnk" || isZIPContainer(ext) || riskExtensions[ext] || stage9InspectableExtension(ext) || stage10InspectableExtension(ext) || score > 0
+	inspectContent := isThreatScriptExtension(ext) || ext==".html" || ext==".htm" || ext==".sys" || scriptExtensions[ext] || executableExtensions[ext] || isDocumentOrImage(ext) || ext == ".lnk" || isZIPContainer(ext) || riskExtensions[ext] || stage9InspectableExtension(ext) || stage10InspectableExtension(ext) || stage11InspectableExtension(ext) || score > 0
 	if inspectContent {
-		if isZIPContainer(ext) && info.Size() <= 64*1024*1024 {
-			inspectZIP(p, &score, &reasons)
-		}
+		if isZIPContainer(ext) {
+            if info.Size() <= 512*1024*1024 {
+                if err:=inspectZIPWithError(p,&score,&reasons);err!=nil && onReadError!=nil {
+                    onReadError("ZIP archive could not be inspected: "+err.Error())
+                }
+            } else if onReadError!=nil {
+                onReadError("ZIP metadata inspection limited to archives at most 512 MiB")
+            }
+        }
 		// Do not read all huge files: sample only small file heads.
 		maxRead := int64(4096)
 		if isThreatScriptExtension(ext) || ext==".html" || ext==".htm" {
 			maxRead = 2 * 1024 * 1024
 		}
-		if stage9InspectableExtension(ext) || stage10InspectableExtension(ext) {
+		if stage9InspectableExtension(ext) || stage10InspectableExtension(ext) || stage11InspectableExtension(ext) {
 			maxRead = 512 * 1024
 		}
-		if info.Size() <= 32*1024*1024 && maxRead > info.Size() {
+		if ext==".lnk" { maxRead=128*1024 }
+        if info.Size() <= 32*1024*1024 && maxRead > info.Size() {
 			maxRead = info.Size()
 		}
 		if info.Size() > 0 && maxRead > 0 {
 			fh, err := os.Open(p)
 			if err == nil {
-				buf, _ := io.ReadAll(io.LimitReader(fh, maxRead))
+				buf, readErr := io.ReadAll(io.LimitReader(fh, maxRead))
+                if readErr!=nil && onReadError!=nil {onReadError("content read incomplete: "+readErr.Error())}
 				if isExactEICAR(buf) && info.Size() == int64(len(buf)) {
 					add(110, "Exact EICAR antivirus test file (harmless standardized test, not malware)")
 				}
@@ -428,8 +483,11 @@ func inspectFile(p string, info os.FileInfo) *Finding {
 				inspectPEFileMetadata(buf, ext, &score, &reasons)
 				inspectStage9Content(name, ext, buf, &score, &reasons)
 				inspectStage10Content(name, ext, buf, &score, &reasons)
-				_ = fh.Close()
-			}
+                inspectStage11Content(name, ext, buf, &score, &reasons)
+                _ = fh.Close()
+            } else if onReadError!=nil {
+                onReadError("file content could not be opened: "+err.Error())
+            }
 		}
 	}
 	if score < 40 {

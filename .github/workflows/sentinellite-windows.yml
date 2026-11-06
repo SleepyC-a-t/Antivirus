@@ -1,4 +1,4 @@
-name: SentinelGuard v3.1 Windows validation
+name: SentinelGuard v3.2 Windows validation
 
 on:
   pull_request:
@@ -6,7 +6,7 @@ on:
       - '.github/workflows/sentinellite-windows.yml'
       - 'SentinelLite_Source/**'
       - 'SentinelLite.exe'
-      - 'SentinelGuard-v3.1.exe'
+      - 'SentinelGuard-v3.2.exe'
   push:
     branches: [main]
     paths:
@@ -53,7 +53,7 @@ jobs:
 
       - name: Build fresh Windows executable
         run: |
-          $exe = Join-Path $env:RUNNER_TEMP 'SentinelGuard-v3.1.exe'
+          $exe = Join-Path $env:RUNNER_TEMP 'SentinelGuard-v3.2.exe'
           go build -trimpath -ldflags '-s -w -H windowsgui' -o $exe .
           if ($LASTEXITCODE -ne 0 -or !(Test-Path $exe)) { throw 'Windows executable build failed' }
           Get-FileHash -Algorithm SHA256 $exe | Format-List
@@ -90,14 +90,14 @@ jobs:
               Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
             }
           }
-          Test-Launch (Join-Path $env:RUNNER_TEMP 'SentinelGuard-v3.1.exe')
+          Test-Launch (Join-Path $env:RUNNER_TEMP 'SentinelGuard-v3.2.exe')
           Test-Launch (Join-Path $env:GITHUB_WORKSPACE 'SentinelLite.exe')
 
       - name: Publish tested Windows executable
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: SentinelGuard-v3.1-Windows-tested
-          path: ${{ runner.temp }}/SentinelGuard-v3.1.exe
+          name: SentinelGuard-v3.2-Windows-tested
+          path: ${{ runner.temp }}/SentinelGuard-v3.2.exe
           if-no-files-found: error
           retention-days: 14
