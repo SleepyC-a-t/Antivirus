@@ -56,7 +56,7 @@ func inspectZIP(p string,score *int,reasons *[]string) {
  inspectArchiveEntries(zr.File,0,&budget,score,reasons)
 }
 func inspectArchiveEntries(files []*zip.File,depth int,budget *int64,score *int,reasons *[]string) bool {
- const maxEntries=1500
+ const maxEntries=4096
  const maxEntryBytes=int64(128*1024)
  const maxNestedBytes=int64(512*1024)
  for i,file:=range files {
