@@ -111,16 +111,23 @@ func isExactEICAR(buf []byte) bool {
  return true
 }
 func stripLineComments(source string) string {
- lines:=strings.Split(source,"\n")
  var result strings.Builder
- for _,line:=range lines {
+ result.Grow(len(source))
+ for len(source)>0 {
+  idx:=strings.IndexByte(source,'\n')
+  if idx<0 {idx=len(source)}
+  line:=source[:idx]
   trimmed:=strings.TrimSpace(line)
-  lower:=strings.ToLower(trimmed)
-  if strings.HasPrefix(lower,"#")||strings.HasPrefix(lower,"//")||strings.HasPrefix(lower,"rem ")||strings.HasPrefix(lower,"@rem ")||strings.HasPrefix(lower,"::"){continue}
-  result.WriteString(line);result.WriteByte('\n')
+  comment:=strings.HasPrefix(trimmed,"#")||strings.HasPrefix(trimmed,"//")||strings.HasPrefix(trimmed,"::")
+  if len(trimmed)>=4 {comment=comment||strings.EqualFold(trimmed[:4],"rem ")}
+  if len(trimmed)>=5 {comment=comment||strings.EqualFold(trimmed[:5],"@rem ")}
+  if !comment {result.WriteString(line);result.WriteByte('\n')}
+  if idx==len(source){break}
+  source=source[idx+1:]
  }
  return result.String()
 }
+
 var shortcutEncoded = regexp.MustCompile(`(?i)\bpowershell(?:\.exe)?\s+[^\r\n]{0,100}-(?:encodedcommand|enc|en|e)\s+[a-z0-9+/=]{28,}`)
 func inspectShortcut(data []byte, score *int, reasons *[]string) {
  source:=strings.ToLower(string(data))
