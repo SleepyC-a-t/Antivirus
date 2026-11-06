@@ -34,7 +34,7 @@ func TestStage10PrivacyDisclosureAndJSONShape(t *testing.T) {
  rec:=httptest.NewRecorder()
  srv.routes().ServeHTTP(rec,req)
  if rec.Code!=http.StatusOK {t.Fatalf("report HTTP status %d: %s",rec.Code,rec.Body.String())}
- if !strings.Contains(rec.Header().Get("Content-Disposition"),"SentinelGuard_v3.1_Report.json"){t.Fatal("export filename not updated")}
+ if !strings.Contains(rec.Header().Get("Content-Disposition"),"SentinelGuard_v3.2_Report.json"){t.Fatal("export filename not updated")}
  var got struct{
   Product string `json:"product"`
   Version string `json:"version"`
@@ -43,7 +43,7 @@ func TestStage10PrivacyDisclosureAndJSONShape(t *testing.T) {
   Findings []map[string]any `json:"findings"`
  }
  if err:=json.Unmarshal(rec.Body.Bytes(),&got);err!=nil{t.Fatal(err)}
- if got.Product!="SentinelGuard" || got.Version!="3.1" || len(got.Findings)!=1 {t.Fatalf("report metadata incorrect: %+v",got)}
+ if got.Product!="SentinelGuard" || got.Version!="3.2" || len(got.Findings)!=1 {t.Fatalf("report metadata incorrect: %+v",got)}
  if got.Status.Current!=`C:\Users\Test User\Documents`{t.Fatal("export paths changed unexpectedly")}
  if got.Findings[0]["path"]!=`C:\Users\Test User\Documents\private-file.txt`{t.Fatal("report must accurately disclose that full paths are present")}
  for _,key:=range []string{"id","path","name","score","severity","source","reasons","size","modified","canQuarantine"} {
