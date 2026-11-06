@@ -111,5 +111,14 @@ func chooseScanFolder() (string, error) {
     }
     if stringPtr == 0 { return "", fmt.Errorf("Windows folder picker returned an empty path") }
     defer fileDialogCoTaskMemFree.Call(stringPtr)
-    return syscall.UTF16PtrToString((*uint16)(unsafe.Pointer(stringPtr))), nil
+    // The standard syscall package exposes UTF16ToString (not the
+    // x/sys/windows UTF16PtrToString helper). Read the COM-allocated,
+    // NUL-terminated UTF-16 buffer with an explicit length ceiling.
+    units := make([]uint16, 0, 260)
+    for i := uintptr(0); i < 32768; i++ {
+        value := *(*uint16)(unsafe.Pointer(stringPtr + i*2))
+        if value == 0 { return syscall.UTF16ToString(units), nil }
+        units = append(units, value)
+    }
+    return "", fmt.Errorf("chosen folder path exceeds the supported limit")
 }
