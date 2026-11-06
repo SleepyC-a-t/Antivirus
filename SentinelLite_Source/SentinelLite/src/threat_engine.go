@@ -49,7 +49,7 @@ var threatRules = []threatRule{
 
 var ruleSpace = regexp.MustCompile(`\s+`)
 var remoteURL = regexp.MustCompile(`(?i)https?://`)
-var htmlPasswordForm = regexp.MustCompile(`(?i)<form\b[\s\S]{0,1500}password`)
+var htmlPasswordForm = regexp.MustCompile(`(?i)<form\b[\s\S]{0,900}password`)
 
 func inspectThreatBehavior(data []byte, ext string, score *int, reasons *[]string) {
 	// Bound the analysis to the existing head/tail sampling policy.
