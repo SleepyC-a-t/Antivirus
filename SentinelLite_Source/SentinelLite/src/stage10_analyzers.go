@@ -17,7 +17,7 @@ func stage10InspectableExtension(ext string) bool {
 }
 
 var stage10XMLComments = regexp.MustCompile(`(?s)<!--.*?-->`)
-var stage10ScriptBlock = regexp.MustCompile(`(?is)<script\b[^>]{0,300}>([\s\S]{0,65536}?)</script\s*>`)
+var stage10ScriptBlock = regexp.MustCompile(`(?is)<script\b[^>]{0,300}>([\s\S]*?)</script\s*>`)
 var stage10WSHCreate = regexp.MustCompile(`(?i)\b(?:new\s+activexobject|(?:wscript\.)?createobject)\s*\(\s*['"]wscript\.shell['"]\s*\)`)
 var stage10WSHRun = regexp.MustCompile(`(?i)\.\s*run\s*\(`)
 var stage10WSHInterpreter = regexp.MustCompile(`(?i)\b(?:powershell(?:\.exe)?|pwsh(?:\.exe)?|mshta(?:\.exe)?|wscript(?:\.exe)?)\b`)
