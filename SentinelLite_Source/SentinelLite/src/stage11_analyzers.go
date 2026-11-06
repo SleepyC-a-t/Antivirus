@@ -84,8 +84,8 @@ func inspectStage11Content(name,ext string,data []byte,score *int,reasons *[]str
         if strings.Contains(lower,"msxml2.xmlhttp") && strings.Contains(lower,"adodb.stream") &&
             strings.Contains(lower,"wscript.shell") {
             code:=strings.ToLower(codeOnlyForSignals(src))
-            if strings.Contains(code,".open(") && strings.Contains(code,".send(") &&
-               strings.Contains(code,".savetofile(") && strings.Contains(code,".run(") {
+            if strings.Contains(code,".open") && strings.Contains(code,".send") &&
+               strings.Contains(code,".savetofile") && strings.Contains(code,".run") {
                 add(88,"VBScript downloads a payload, saves it to disk, and launches it")
             }
         }
