@@ -47,6 +47,9 @@ jobs:
       - name: Unit and local API tests (harmless fixtures)
         run: go test -count=1 -v ./...
 
+      - name: Bounded scanner microbenchmarks
+        run: go test -run '^$' -bench '^BenchmarkInspect' -benchmem -benchtime=300ms ./...
+
       - name: Build fresh Windows executable
         run: |
           $exe = Join-Path $env:RUNNER_TEMP 'SentinelLite-built.exe'
@@ -88,3 +91,12 @@ jobs:
           }
           Test-Launch (Join-Path $env:RUNNER_TEMP 'SentinelLite-built.exe')
           Test-Launch (Join-Path $env:GITHUB_WORKSPACE 'SentinelLite.exe')
+
+      - name: Publish tested Windows executable
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SentinelLite-Windows-tested
+          path: ${{ runner.temp }}/SentinelLite-built.exe
+          if-no-files-found: error
+          retention-days: 14

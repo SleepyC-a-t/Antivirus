@@ -1,7 +1,6 @@
 package main
 
 import (
-	"archive/zip"
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -333,6 +332,9 @@ func inspectFile(p string, info os.FileInfo) *Finding {
 	userWritable := strings.Contains(lower, `\appdata\`) || strings.Contains(lower, `\temp\`) || strings.Contains(lower, `/tmp/`)
 	startup := strings.Contains(lower, `\start menu\programs\startup\`) || strings.Contains(lower, `\startmenu\startup\`)
 	temp := strings.Contains(lower, `\temp\`) || strings.Contains(lower, `/tmp/`)
+	if hasMisleadingBidiControls(name) {
+		add(80, "Filename contains bidirectional override/control characters that can disguise its extension")
+	}
 	if doubleExt.MatchString(name) {
 		add(80, "Disguised double extension (for example document.pdf.exe)")
 	}
@@ -355,9 +357,9 @@ func inspectFile(p string, info os.FileInfo) *Finding {
 		add(22, "Executable or library within roaming application data (can be legitimate)")
 	}
 
-	inspectContent := scriptExtensions[ext] || executableExtensions[ext] || ext == ".txt" || ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".pdf" || ext == ".lnk" || ext == ".zip" || riskExtensions[ext] || score > 0
+	inspectContent := scriptExtensions[ext] || executableExtensions[ext] || isDocumentOrImage(ext) || ext == ".lnk" || isZIPContainer(ext) || riskExtensions[ext] || score > 0
 	if inspectContent {
-		if ext == ".zip" && info.Size() <= 200*1024*1024 {
+		if isZIPContainer(ext) && info.Size() <= 64*1024*1024 {
 			inspectZIP(p, &score, &reasons)
 		}
 		// Do not read all huge files: sample only small file heads.
@@ -379,8 +381,8 @@ func inspectFile(p string, info os.FileInfo) *Finding {
 				if scriptExtensions[ext] {
 					inspectScript(buf, &score, &reasons)
 				}
-				if (ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".pdf" || ext == ".txt") && len(buf) > 2 && bytes.HasPrefix(buf, []byte{'M', 'Z'}) {
-					add(80, "PE executable header disguised as a document or image")
+				if isDocumentOrImage(ext) && isPEHeader(buf) {
+					add(80, "Valid PE executable header disguised as a document or image")
 				}
 			}
 		}
@@ -418,7 +420,7 @@ func inspectScript(buf []byte, score *int, reasons *[]string) {
 	if len(buf) == 0 {
 		return
 	}
-	lower := strings.ToLower(string(buf))
+	lower := strings.ToLower(decodeScriptText(buf))
 	add := func(n int, desc string) { *score += n; *reasons = append(*reasons, desc) }
 	encoded := strings.Contains(lower, "-encodedcommand") || encodedCommandPattern.MatchString(lower)
 	if encoded {
@@ -443,26 +445,6 @@ func inspectScript(buf []byte, score *int, reasons *[]string) {
 	}
 	if strings.Contains(lower, "wscript.shell") && strings.Contains(lower, "regwrite") && strings.Contains(lower, `\currentversion\run`) {
 		add(70, "Writes persistence into a Windows Run registry key")
-	}
-}
-
-func inspectZIP(p string, score *int, reasons *[]string) {
-	zr, err := zip.OpenReader(p)
-	if err != nil {
-		return
-	}
-	defer zr.Close()
-	count := 0
-	for _, file := range zr.File {
-		count++
-		if count > 1500 {
-			break
-		}
-		if doubleExt.MatchString(filepath.Base(file.Name)) {
-			*score += 65
-			*reasons = append(*reasons, "ZIP archive contains a disguised executable: "+truncate(file.Name, 120))
-			break
-		}
 	}
 }
 
