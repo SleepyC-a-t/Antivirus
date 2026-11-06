@@ -56,7 +56,7 @@ var threatQuickKeywords = [...]string{
 	"psexec","reg add","regsvr32","rundll32","msiexec","bitsadmin",
 	"procdump","copy-item","protecteddata","invoke-restmethod","curl",
 	"nslookup","get-clipboard","createobject(","amsiutils","virtualalloc",
-	"ntunmapviewofsection","exec(","get-childitem","voke-expression",
+	"ntunmapviewofsection","exec(","get-childitem","voke-expression","assembly]::load",
 }
 func hasThreatIndicators(raw string) bool {
 	for _, token := range threatQuickKeywords {
