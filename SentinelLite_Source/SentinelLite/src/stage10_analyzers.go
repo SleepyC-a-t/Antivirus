@@ -24,7 +24,9 @@ var stage10WSHInterpreter = regexp.MustCompile(`(?i)\b(?:powershell(?:\.exe)?|pw
 var stage10WSHHighRiskArgument = regexp.MustCompile(`(?i)(?:\s-(?:enc(?:odedcommand)?|nop(?:rofile)?|w(?:indowstyle)?\s+hidden)\b|\bhttps?://|\binvoke-expression\b|\bdownloadstring\b)`)
 
 func inspectStage10Content(name, ext string, data []byte, score *int, reasons *[]string) {
-	if len(data)==0 || len(data)>512*1024 {return}
+	// The common scanner calls this on many PE and script files. Return
+	// before Unicode decoding or regex work for irrelevant extensions.
+	if !stage10InspectableExtension(ext) || len(data)==0 || len(data)>512*1024 {return}
 	src:=decodeScriptText(data)
 	lower:=strings.ToLower(src)
 	switch ext {
