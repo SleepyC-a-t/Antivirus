@@ -136,7 +136,7 @@ func inspectStage9Content(name, ext string, data []byte, score *int, reasons *[]
 		}
 	case ".py":
 		if !strings.Contains(lower,"socket") && !strings.Contains(lower,"encrypt") &&
-			!strings.Contains(lower,"login data") && !strings.Contains(lower,"gethost") {return}
+			!strings.Contains(lower,"login data") && !strings.Contains(lower,"cookies") && !strings.Contains(lower,"gethost") {return}
 		code:=strings.ToLower(codeOnlyForSignals(src))
 		if (strings.Contains(code,"os.walk(") || strings.Contains(code,".rglob(") ||
 			strings.Contains(code,"glob.glob(")) &&
