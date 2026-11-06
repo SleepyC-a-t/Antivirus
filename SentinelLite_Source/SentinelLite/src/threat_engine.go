@@ -139,3 +139,31 @@ func inspectValidatedShortcut(buf []byte, score *int, reasons *[]string) {
 	if !bytes.Equal(buf[4:20],clsid){return}
 	inspectShortcut(buf, score, reasons)
 }
+
+
+// A ransom note is evidence worth showing, but not proof a ransomware
+// executable was present or active. Require both a recovery-themed filename
+// and extortion language; ordinary encryption documentation is ignored.
+func inspectRansomNote(name string, data []byte, score *int, reasons *[]string) {
+ lowerName:=strings.ToLower(name)
+ if !(strings.Contains(lowerName,"decrypt") || strings.Contains(lowerName,"recover_files") || strings.Contains(lowerName,"readme_recover")) {return}
+ text:=strings.ToLower(string(data))
+ if strings.Contains(text,"files have been encrypted") &&
+  (strings.Contains(text,"pay") || strings.Contains(text,"ransom") || strings.Contains(text,"bitcoin")) {
+  *score+=70
+  *reasons=append(*reasons,"Ransomware indicator: recovery-themed note with extortion language (not evidence of an active infection)")
+ }
+}
+
+// RAR payload inspection is NOT implemented. A fake .rar containing exposed
+// script text can be warned about; valid compressed RAR bytes are left alone.
+func inspectMisnamedRAR(data []byte, score *int, reasons *[]string) {
+ if len(data)<16 || bytes.HasPrefix(data,[]byte{'R','a','r','!',0x1a,0x07}) {return}
+ var scriptScore int
+ var scriptReasons []string
+ inspectScript(data,&scriptScore,&scriptReasons)
+ if scriptScore>=70 {
+  *score+=52
+  *reasons=append(*reasons,"Unrecognized RAR header with plaintext script indicators; archive extraction not available")
+ }
+}
