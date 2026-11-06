@@ -26,6 +26,7 @@ var edition = "standard"
 
 type Server struct {
     active *ActiveMonitor
+    extensionToken string // read-only browser companion credential
 	app     *App
 	token   string
 	address string
@@ -88,10 +89,13 @@ func (s *Server) secure(next http.Handler) http.Handler {
 		if r.Method == http.MethodGet && t == "" {
 			t = r.URL.Query().Get("token")
 		}
-		if subtle.ConstantTimeCompare([]byte(t), []byte(s.token)) != 1 {
-			http.Error(w, "access token required", 403)
-			return
-		}
+		authorized:=subtle.ConstantTimeCompare([]byte(t),[]byte(s.token))==1
+        if !authorized && edition=="active" && r.URL.Path=="/api/active/extension-status" {
+            authorized=s.extensionToken!=""&&subtle.ConstantTimeCompare([]byte(t),[]byte(s.extensionToken))==1
+        }
+        if !authorized {
+            http.Error(w,"access token required",403);return
+        }
 		next.ServeHTTP(w, r)
 	})
 }
@@ -424,6 +428,9 @@ func main() {
 	server := &Server{app: newApp(vault), token: token, address: listener.Addr().String()}
     if edition=="active" {
         server.active=newActiveMonitor(vault)
+        browserSecret:=make([]byte,32)
+        if _,err:=rand.Read(browserSecret);err!=nil {log.Fatal(err)}
+        server.extensionToken=base64.RawURLEncoding.EncodeToString(browserSecret)
         server.active.start()
     }
 	url := "http://" + server.address + "/app/?token=" + token

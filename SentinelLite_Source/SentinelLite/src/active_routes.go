@@ -1,9 +1,7 @@
 package main
 
 import(
-    "errors"
     "net/http"
-    "os"
     "time"
 )
 func registerActiveRoutes(mux *http.ServeMux,s *Server){
@@ -12,6 +10,12 @@ func registerActiveRoutes(mux *http.ServeMux,s *Server){
     mux.HandleFunc("/api/active/status",func(w http.ResponseWriter,r *http.Request){
         if r.Method!=http.MethodGet{http.Error(w,"GET required",405);return}
         sendJSON(w,s.active.snapshot())
+    })
+    mux.HandleFunc("/api/active/browser-pair",func(w http.ResponseWriter,r *http.Request){
+        if r.Method!=http.MethodGet{http.Error(w,"GET required",405);return}
+        // Browser pairings are *read-only*. They cannot toggle scanning,
+        // request quarantine, delete files or control the local application.
+        sendJSON(w,map[string]any{"pairing":"http://"+s.address+"/api/active/extension-status?pair="+s.extensionToken})
     })
     mux.HandleFunc("/api/active/extension-status",func(w http.ResponseWriter,r *http.Request){
         if r.Method!=http.MethodGet{http.Error(w,"GET required",405);return}
@@ -57,5 +61,3 @@ func registerActiveRoutes(mux *http.ServeMux,s *Server){
         sendJSON(w,map[string]any{"product":"SentinelGuard Active","version":"0.1-preview","exportedAt":time.Now(),"status":s.active.snapshot(),"privacy":"Contains absolute file paths, scan detection reasons and local timestamps. No internet history, passwords, cookies or uploaded file contents."})
     })
 }
-var _ = errors.New
-var _ = os.ErrNotExist
