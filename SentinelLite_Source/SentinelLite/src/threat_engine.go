@@ -85,6 +85,9 @@ func inspectThreatBehavior(data []byte, ext string, score *int, reasons *[]strin
 	flat := ruleSpace.ReplaceAllString(code, " ")
 	flatRaw := ruleSpace.ReplaceAllString(raw, " ")
 	for _, rule := range threatRules {
+		// Stage 12: require a direct same-command remote MSI target.
+        // A URL elsewhere plus a local silent installer is not sufficient.
+        if rule.label=="Runs a silent installer from a remote URL" {continue}
 		// These five v2.0 checks produced 114 of 158 false-positive
 		// candidates in the observed clean-machine scan. Stage 8 evaluates
 		// them as tightly scoped command patterns, not unrelated substrings.

@@ -44,7 +44,7 @@ func TestSyntheticDetectionQuality(t *testing.T){
  baseline:=[]fixture{
  {"double-extension EXE","invoice.pdf.exe",[]byte("inert"),nil,true},
  {"double-extension script","holiday.jpg.js",[]byte("// inert"),nil,true},
- {"system impersonation","svchost.exe",[]byte("inert"),nil,true},
+ {"system impersonation: inert filename is not PE","svchost.exe",[]byte("inert"),nil,false},
  {"download-execute script","remote.ps1",[]byte(remote),nil,true},
  {"encoded-command","encoded.bat",[]byte("powershell -NoProfile -enc AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),nil,true},
  {"base64-execute","decode.ps1",[]byte("IEX ([Convert]::FromBase64String('AAAA'))"),nil,true},
@@ -76,7 +76,8 @@ func TestSyntheticDetectionQuality(t *testing.T){
  {"normal MSI","app.msi",[]byte("inert"),nil,false},
  {"certutil hash","hash.cmd",[]byte("certutil -hashfile report.pdf SHA256"),nil,false},
  }
- evaluateFixtures(t,"BASELINE",baseline,17,0)
+ // Stage 12 reclassifies the inert process-name-only fixture as benign.
+ evaluateFixtures(t,"BASELINE",baseline,16,0)
  innerBad:=fixtureZIP(t,map[string][]byte{"invoice.pdf.exe":[]byte("inert")})
  innerScript:=fixtureZIP(t,map[string][]byte{"run.ps1":[]byte(remote)})
  innerGood:=fixtureZIP(t,map[string][]byte{"readme.txt":[]byte("ordinary")})

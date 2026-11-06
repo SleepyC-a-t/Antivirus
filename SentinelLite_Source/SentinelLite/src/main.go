@@ -11,6 +11,8 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
+	"sync/atomic"
 	"time"
 )
 
@@ -21,6 +23,8 @@ type Server struct {
 	app     *App
 	token   string
 	address string
+	folderPicker func() (string, error) // optional test override
+	pickingFolder atomic.Bool
 }
 
 func sendJSON(w http.ResponseWriter, val any) {
@@ -39,6 +43,15 @@ func readJSON(r *http.Request, v any) error {
 }
 func (s *Server) secure(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        // Preserve the local API's availability if a single request handler
+        // panics unexpectedly. Go's default HTTP recovery drops the connection
+        // and produces an unhelpful browser NetworkError.
+        defer func() {
+            if incident := recover(); incident != nil {
+                log.Printf("Local API error: %v", panicAsError(incident))
+                http.Error(w, "Internal scanner error; inspect local diagnostics log", http.StatusInternalServerError)
+            }
+        }()
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")
@@ -92,8 +105,48 @@ func (s *Server) routes() http.Handler {
 	})
 	mux.HandleFunc("/api/snapshot", func(w http.ResponseWriter, r *http.Request) {
 		status, fs := s.app.snapshot()
-		sendJSON(w, map[string]any{"status": status, "findings": fs, "product": map[string]string{"name":"SentinelGuard","version":"3.2","type":"advisory static scanner"}})
+		sendJSON(w, map[string]any{"status": status, "findings": fs, "product": map[string]string{"name": "SentinelGuard", "version": "3.3", "type": "advisory static scanner"}})
 	})
+	mux.HandleFunc("/api/choose-folder", func(w http.ResponseWriter, r *http.Request) {
+        if !requirePost(w, r) { return }
+        // One native dialog at a time. It is interactive and may remain open
+        // while the user navigates Explorer.
+        if !s.pickingFolder.CompareAndSwap(false, true) {
+            apiError(w, http.StatusConflict, errors.New("a folder picker is already open"))
+            return
+        }
+        defer s.pickingFolder.Store(false)
+        s.app.mu.RLock()
+        active := s.app.status.Active
+        s.app.mu.RUnlock()
+        if active {
+            apiError(w, http.StatusConflict, errors.New("stop the scan before selecting another folder"))
+            return
+        }
+        picker := chooseScanFolder
+        if s.folderPicker != nil { picker = s.folderPicker }
+        path, err := picker()
+        if errors.Is(err, errFolderPickerCanceled) {
+            sendJSON(w, map[string]any{"cancelled": true})
+            return
+        }
+        if err != nil {
+            apiError(w, http.StatusInternalServerError, err)
+            return
+        }
+        // Never accept a nonexistent file, a virtual Shell namespace item,
+        // or a reparse-point target that the crawler intentionally won't scan.
+        info, err := os.Lstat(path)
+        if err != nil {
+            apiError(w, http.StatusBadRequest, err)
+            return
+        }
+        if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || isReparse(path) {
+            apiError(w, http.StatusBadRequest, errors.New("select a regular folder, not a file, symlink or junction"))
+            return
+        }
+        sendJSON(w, map[string]any{"folder": filepath.Clean(path), "cancelled": false})
+    })
 	mux.HandleFunc("/api/start", func(w http.ResponseWriter, r *http.Request) {
 		if !requirePost(w, r) {
 			return
@@ -126,6 +179,11 @@ func (s *Server) routes() http.Handler {
 			return
 		}
 		go func() {
+			defer func() {
+				if failure := recover(); failure != nil {
+					s.app.finish(panicAsError(failure))
+				}
+			}()
 			var runErr error
 			if req.Engine == "defender" {
 				runErr = s.app.runDefender(ctx, req.Mode, req.Path)
@@ -307,10 +365,10 @@ func (s *Server) routes() http.Handler {
 	})
 	mux.HandleFunc("/api/report", func(w http.ResponseWriter, r *http.Request) {
 		st, fs := s.app.snapshot()
-        skippedPaths := s.app.skippedSnapshot()
+		skippedPaths := s.app.skippedSnapshot()
 		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Content-Disposition", `attachment; filename="SentinelGuard_v3.2_Report.json"`)
-		sendJSON(w, map[string]any{"product":"SentinelGuard","version":"3.2","exportedAt": time.Now(), "status": st, "findings": fs, "skippedPaths": skippedPaths, "notice": "These findings may be false positives. Defender scans are separate from heuristic scans."})
+		w.Header().Set("Content-Disposition", `attachment; filename="SentinelGuard_v3.3_Report.json"`)
+		sendJSON(w, map[string]any{"product": "SentinelGuard", "version": "3.3", "exportedAt": time.Now(), "status": st, "findings": fs, "skippedPaths": skippedPaths, "notice": "These findings may be false positives. Defender scans are separate from heuristic scans."})
 	})
 	mux.HandleFunc("/api/exit", func(w http.ResponseWriter, r *http.Request) {
 		if !requirePost(w, r) {
@@ -331,6 +389,7 @@ func (s *Server) routes() http.Handler {
 }
 
 func main() {
+	initDiagnostics()
 	vault, err := openVault()
 	if err != nil {
 		reportStartupError("Could not create quarantine folder: " + err.Error())

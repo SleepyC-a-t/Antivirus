@@ -74,7 +74,7 @@ func inspectArchiveEntries(files []*zip.File,depth int,budget *int64,score *int,
    *score+=65;*reasons=append(*reasons,"Archive contains disguised executable: "+name);return true
   }
   nested:=depth<3 && isZIPContainer(ext)
-  if !nested && !scriptExtensions[ext] && !isThreatScriptExtension(ext) && ext!=".lnk" && !isDocumentOrImage(ext) && !stage9InspectableExtension(ext) && !stage10InspectableExtension(ext) && !stage11InspectableExtension(ext){continue}
+  if !nested && !scriptExtensions[ext] && !isThreatScriptExtension(ext) && ext!=".lnk" && !isDocumentOrImage(ext) && !stage9InspectableExtension(ext) && !stage10InspectableExtension(ext) && !stage11InspectableExtension(ext) && !stage12InspectableExtension(ext){continue}
   if file.CompressedSize64>16*1024*1024 {continue}
   limit:=maxEntryBytes
   if nested {limit=maxNestedBytes}
@@ -120,6 +120,9 @@ func inspectArchiveEntries(files []*zip.File,depth int,budget *int64,score *int,
    }
    if stage11InspectableExtension(ext) || isThreatScriptExtension(ext) || ext==".html" || ext==".htm" {
     inspectStage11Content(filepath.Base(file.Name),ext,buf,&entryScore,&entryReasons)
+   }
+   if stage12InspectableExtension(ext) || isThreatScriptExtension(ext) {
+    inspectStage12Content(filepath.Base(file.Name),ext,buf,&entryScore,&entryReasons)
    }
    if entryScore>=40 {
     *score+=entryScore
