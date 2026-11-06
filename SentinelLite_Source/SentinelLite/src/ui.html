@@ -32,6 +32,20 @@ button{background:#203149;border:1px solid #39516b;color:#dce7f9;padding:10px 14
 .resource-tile small,.resource-foot{font-size:11px;color:var(--sub)}
 .resource-foot{margin:10px 0 0;line-height:1.5}
 @media(max-width:600px){.resource-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+.active-panel{margin:0 0 20px;padding:22px;border:1px solid #36847b;border-radius:16px;background:linear-gradient(115deg,#102b31,#112035)}
+.active-heading{display:flex;gap:18px;justify-content:space-between;align-items:center;flex-wrap:wrap}
+.active-heading h2{margin:0;font-size:22px}.active-sub{color:var(--sub);font-size:12px}
+.active-bad{color:var(--red)}.active-good{color:var(--accent)}
+.active-btns{display:flex;gap:9px;flex-wrap:wrap;margin:12px 0}
+.active-btns button{border-radius:9px;padding:10px 16px}
+.active-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:9px;margin:14px 0}
+.active-stats>div{background:#091622;border:1px solid var(--line);border-radius:9px;padding:10px}
+.active-stats b{font-size:19px;display:block}
+.active-options{padding:10px 0;border-top:1px solid var(--line);font-size:13px}
+.active-events{max-height:220px;overflow:auto;background:#07131c;border-radius:10px;padding:10px;font-size:12px}
+.active-events>div{padding:6px 2px;border-bottom:1px solid #2a3d48;overflow-wrap:anywhere}
+.active-watch{white-space:pre-wrap;color:var(--sub);font-size:12px;overflow-wrap:anywhere}
 </style>
 </head>
 <body>
@@ -53,6 +67,23 @@ button{background:#203149;border:1px solid #39516b;color:#dce7f9;padding:10px 14
     <div class="info"><strong>False positives are possible.</strong> Startup shortcuts, legitimate scripts, and software in AppData can all look unusual. Do not quarantine files you have not assessed.</div>
    </div></aside>
   <main>
+    <section id="activeProtectionPanel" class="active-panel hide" aria-label="Live file protection">
+      <div class="active-heading"><div><div class="eyebrow">SENTINELGUARD ACTIVE · EXPERIMENTAL</div><h2>Download protection <span id="activeState" class="active-bad">OFF</span></h2>
+      <p class="active-sub">App must remain running. Only configured folders are watched. This is not a kernel real-time antivirus.</p></div>
+      <button class="primary" id="activeToggle">Turn protection ON</button></div>
+      <div class="active-stats"><div><small>New/changed files checked</small><b id="activeInspected">0</b></div>
+        <div><small>Flagged for review</small><b id="activeFlagged">0</b></div>
+        <div><small>High-confidence quarantined</small><b id="activeBlocked">0</b></div></div>
+      <div class="active-options"><label><input type="checkbox" id="activeAutoBlock" checked> Automatically quarantine high-confidence downloads (score ≥ 110 only)</label>
+      <p class="active-sub">Review-level findings are never automatically quarantined. There is a delay after a download finishes; do not open untrusted files before your main antivirus scans them.</p></div>
+      <div class="active-options"><b>Folders monitored:</b><div id="activeWatchedFolders" class="active-watch">Not configured</div>
+      <div class="active-btns"><button class="outline" id="activeAddFolder">Add folder…</button><button class="outline" id="activeRemoveFolder">Remove folder…</button></div></div>
+      <div class="active-options"><b>Browser protection (optional companion extension)</b>
+      <p class="active-sub">Blocks exact phishing URLs from a free community feed in Firefox/Chrome/Edge after you pair the extension. Controlled by the ON/OFF switch, with up to a 1-minute delay. Never intercepts or uploads browsing history.</p>
+      <div class="active-btns"><button class="outline" id="activePair">Copy read-only browser pairing link</button><button class="outline" id="activeReport">Export protection report</button></div>
+      <p id="activeMessage" class="active-sub"></p></div>
+      <div class="active-options"><b>Recent protection events</b><div id="activeEvents" class="active-events">No events yet.</div></div>
+    </section>
     <div class="metrics"><div class="metric"><b id="scannedCount">0</b><span>Files inspected*</span></div><div class="metric"><b id="findingCount">0</b><span>Items to review</span></div><div class="metric"><b id="skippedCount">0</b><span>Paths not fully inspected</span></div></div>
     <section class="panel resource-panel" aria-label="Scanner resource usage">
       <div class="resource-heading"><h3>CPU &amp; memory during this scan</h3><span class="muted small" id="resourceState">No scan yet</span></div>
@@ -96,7 +127,7 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const fmt=n=>Number(n||0).toLocaleString('en-US');
 function bytes(n){if(n<1024)return fmt(n)+' B';if(n<1048576)return(n/1024).toFixed(1)+' KiB';if(n<1073741824)return(n/1048576).toFixed(1)+' MiB';return(n/1073741824).toFixed(2)+' GiB'}
 async function api(endpoint,data){let options={method:data===undefined?'GET':'POST',headers:{'X-Sentinel-Token':TOKEN}};if(data!==undefined){options.headers['Content-Type']='application/json';options.body=JSON.stringify(data)}let res=await fetch(endpoint,options),j;try{j=await res.json()}catch{throw Error('Unexpected response from local scanner')}if(!res.ok)throw Error(j.error||res.statusText);return j}
-const state={status:{active:false,files:0,findings:0,skipped:0},findings:[],vault:[],selected:new Set(),activeTab:'findings',detail:null,starting:false,connectionLosses:0};
+const state={status:{active:false,files:0,findings:0,skipped:0},findings:[],vault:[],selected:new Set(),activeTab:'findings',detail:null,starting:false,connectionLosses:0,activeEdition:false,activeStatus:null};
 function toastError(e){alert('SentinelGuard: '+(e?.message||String(e)))}
 function selectedCount(){return[...state.selected].filter(id=>state.findings.some(f=>f.id===id&&f.canQuarantine)).length}
 function filteredFindings(){let q=$('search').value.trim().toLowerCase(),level=$('filter').value;return state.findings.filter(f=>(level==='all'||f.severity===level)&&(!q||[f.name,f.path,f.source,...(f.reasons||[])].join(' ').toLowerCase().includes(q)))}
@@ -134,6 +165,7 @@ function renderStatus(){
 async function refresh(){
  try{
   let j=await api('/api/snapshot');state.connectionLosses=0;state.status=j.status;state.findings=j.findings||[];
+  if(j.product?.activeEdition){document.querySelector('#activeProtectionPanel').classList.remove('hide');document.title='SentinelGuard Active · Download protection';if(!state.activeEdition){state.activeEdition=true;refreshActive();}}
   for(let id of [...state.selected])if(!state.findings.some(f=>f.id===id&&f.canQuarantine))state.selected.delete(id);
   renderStatus();if(state.activeTab==='findings')renderFindings();
  }catch(e){state.connectionLosses++;if(state.connectionLosses>=3)renderStatus()}
@@ -166,6 +198,70 @@ $('selectAll').onchange=e=>{for(let f of filteredFindings())if(f.canQuarantine){
 $('search').oninput=renderFindings;$('filter').onchange=renderFindings;
 $('quarantineSelected').onclick=async()=>{let ids=[...state.selected].filter(id=>state.findings.some(f=>f.id===id&&f.canQuarantine));if(ids.length>100){alert('Select up to 100 files per batch.');return}if(!ids.length)return;if(!confirm(`Quarantine ${ids.length} selected file(s)?\n\nOnly approve files that you have reviewed. This will MOVE the files, which may affect installed applications or Windows startup. You can later restore them.`))return;try{let j=await api('/api/quarantine',{IDs:ids,Confirm:true});let failures=j.results.filter(x=>x.status!=='ok');alert(`${j.results.length-failures.length} file(s) moved to quarantine.${failures.length?'\n\nFailed:\n'+failures.map(x=>x.name+': '+x.error).join('\n'):''}`);await refresh();await refreshVault()}catch(e){toastError(e)}};
 $('vaultRows').addEventListener('click',async e=>{let restore=e.target.closest('[data-restore]'),del=e.target.closest('[data-delete]');if(restore){let it=state.vault.find(x=>x.id===restore.dataset.restore);if(!it)return;if(!confirm(`RESTORE this file to its original location?\n\n${it.original}\n\nRestoring a malicious file can reintroduce danger. Proceed only if this is a false positive.`))return;try{await api('/api/vault-action',{ID:it.id,Action:'restore',Confirm:true});await refreshVault()}catch(e){toastError(e)}}else if(del){let it=state.vault.find(x=>x.id===del.dataset.delete);if(!it)return;let answer=prompt(`PERMANENTLY DELETE quarantined file:\n${it.name}\n\nThis cannot be undone. Type DELETE to proceed:`);if(answer!=='DELETE')return;try{await api('/api/vault-action',{ID:it.id,Action:'delete',Confirm:true});await refreshVault()}catch(e){toastError(e)}}});
+
+async function refreshActive(){
+ if(!state.activeEdition)return;
+ try {
+   const j=await api('/api/active/status');state.activeStatus=j;
+   $('activeState').textContent=j.enabled?'ON':'OFF';
+   $('activeState').className=j.enabled?'active-good':'active-bad';
+   $('activeToggle').textContent=j.enabled?'Turn protection OFF':'Turn protection ON';
+   $('activeAutoBlock').checked=!!j.autoQuarantine;
+   $('activeInspected').textContent=fmt(j.inspected||0);
+   $('activeFlagged').textContent=fmt(j.flagged||0);
+   $('activeBlocked').textContent=fmt(j.quarantined||0);
+   $('activeWatchedFolders').textContent=(j.watchedFolders||[]).join('\n')||'No folders. Add one to enable protection.';
+   const eventBox=$('activeEvents');eventBox.replaceChildren();
+   for(const e of [...(j.events||[])].reverse().slice(0,18)){
+     const line=document.createElement('div');
+     line.textContent=new Date(e.at).toLocaleTimeString()+' · '+e.action+' · '+(e.path||'')+' · '+(e.reason||'');
+     eventBox.appendChild(line);
+   }
+   if(!(j.events||[]).length) eventBox.textContent='No events yet.';
+   if(j.lastError)$('activeMessage').textContent=j.lastError;
+ } catch(e){$('activeMessage').textContent='Live protection status could not be retrieved: '+e.message}
+}
+$('activeToggle').onclick=async()=>{
+ try {
+   const next=!state.activeStatus?.enabled;
+   await api('/api/active/toggle',{Enabled:next});
+   await refreshActive();
+ }catch(e){toastError(e)}
+};
+$('activeAutoBlock').onchange=async()=>{
+ try{await api('/api/active/autoblock',{Enabled:$('activeAutoBlock').checked});await refreshActive()}
+ catch(e){toastError(e);await refreshActive()}
+};
+$('activeAddFolder').onclick=async()=>{
+ try{
+   const choice=await api('/api/choose-folder',{});
+   if(choice.folder&&!choice.cancelled){
+      await api('/api/active/watch',{Path:choice.folder});await refreshActive();
+   }
+ }catch(e){toastError(e)}
+};
+$('activeRemoveFolder').onclick=async()=>{
+ const folders=state.activeStatus?.watchedFolders||[];
+ if(!folders.length)return;
+ const folder=prompt('Enter the exact path of the monitored folder to remove:\n\n'+folders.join('\n'),folders[folders.length-1]);
+ if(!folder)return;
+ try{await api('/api/active/unwatch',{Path:folder});await refreshActive()}catch(e){toastError(e)}
+};
+$('activePair').onclick=async()=>{
+ try{
+   const response=await api('/api/active/browser-pair');
+   await navigator.clipboard.writeText(response.pairing);
+   $('activeMessage').textContent='Read-only pairing link copied. Paste it into the SentinelGuard browser extension popup. Treat it as a private connection secret.';
+ }catch(e){toastError(e)}
+};
+$('activeReport').onclick=()=>{
+ const a=document.createElement('a');
+ a.href='/api/active/report?token='+encodeURIComponent(TOKEN);
+ a.download='SentinelGuard_Active_Report.json';
+ document.body.appendChild(a);a.click();a.remove();
+};
+setInterval(()=>{if(state.activeEdition)refreshActive()},4000);
+
 $('mode').onchange=()=>{$('customWrap').classList.toggle('hide',$('mode').value!=='custom')};
 $('browseFolder').onclick=chooseFolder;
 function updateEngine(){let defender=document.querySelector('[name=engine]:checked').value==='defender';$('defenderNote').classList.toggle('hide',!defender);$('engineHint').textContent=defender?'Defender uses its installed signature database. Scans might take a long time.':'Efficient metadata analysis, with limited inspection of relevant file contents.'}
