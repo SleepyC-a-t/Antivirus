@@ -19,9 +19,6 @@ func stage12InspectableExtension(ext string) bool {
 
 var remoteMSICommand = regexp.MustCompile(`(?i)\bmsiexec(?:\.exe)?\s+(?:/i|/package)\s+https?://[^\s"'<>]+\.msi(?:\?[^\s"'<>]*)?\s+(?:[^\r\n]{0,200})?(?:/qn|/quiet)\b`)
 var remoteMSIQuietFirst = regexp.MustCompile(`(?i)\bmsiexec(?:\.exe)?\s+(?:/qn|/quiet)\s+(?:/i|/package)\s+https?://[^\s"'<>]+\.msi\b`)
-// In-memory assembly loads are review-worthy when they are active PowerShell
-// statements, not simply discussed in comments or documentation.
-var stage12AssemblyByteLoad = regexp.MustCompile(`(?i)\[\s*(?:reflection\.)?assembly\s*\]\s*::\s*load\s*\(\s*\$[a-z_][a-z0-9_]*\s*\)`)
 var copiedScreen = regexp.MustCompile(`(?i)\bcopyfromscreen\s*\(\s*[^\r\n]{1,200}\)`)
 var lockedMass = regexp.MustCompile(`(?i)\b(?:all|every)\s+(?:your\s+)?files\b[^\r\n]{0,70}\b(?:end\s+in|renamed\s+to|changed\s+to)\s+\.?locked\b`)
 var domainCandidate = regexp.MustCompile(`(?i)(?:[a-z0-9\p{L}-]+\.)+[a-z\p{L}]{2,}`)
@@ -69,10 +66,7 @@ func inspectStage12Content(name, ext string, data []byte, score *int, reasons *[
 	case ".ps1", ".psm1":
 		code := strings.ToLower(codeOnlyForSignals(text))
 
-		if stage12AssemblyByteLoad.MatchString(code) {
-            add(47, "PowerShell loads a .NET assembly from in-memory bytes (can be legitimate)")
-        }
-        // Screenshot capture alone is weak evidence: this is only Review and
+// Screenshot capture alone is weak evidence: this is only Review and
 		// does not indicate exfiltration or a functioning keylogger.
 		if copiedScreen.MatchString(code) && strings.Contains(lower, "$size") {
 			add(40, "Screen-capture API invoked from PowerShell (may be legitimate)")

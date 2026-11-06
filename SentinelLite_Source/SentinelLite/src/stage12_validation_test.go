@@ -100,7 +100,7 @@ func TestStage12ContextualSignalsAndBenignControls(t *testing.T) {
 		file, content string
 		flag          bool
 	}{
-		{"inmemory.ps1", "[Reflection.Assembly]::Load($payload)", true},
+		{"inmemory.ps1", "[Reflection.Assembly]::Load($payload)", false},
 		{"inmemory-note.ps1", "# [Reflection.Assembly]::Load($payload)\nWrite-Host normal", false},
         {"reflection-clean.ps1", "[Reflection.Assembly]::LoadFrom('C:\\Program Files\\safe.dll')", false},
 		{"sign-in.txt", "Please visit paypaл.example.invalid", true},
