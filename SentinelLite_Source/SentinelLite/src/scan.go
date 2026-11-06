@@ -388,7 +388,7 @@ func inspectFile(p string, info os.FileInfo) *Finding {
 				if isExactEICAR(buf) && info.Size() == int64(len(buf)) {
 					add(110, "Exact EICAR antivirus test file (harmless standardized test, not malware)")
 				}
-				if isThreatScriptExtension(ext) || ext==".html" || ext==".htm" || ext == ".txt" || ext == ".7z" {
+				if isThreatScriptExtension(ext) || ext==".html" || ext==".htm" || ext == ".txt" || ext == ".7z" || ext==".rar" {
 					// Check an additional bounded tail sample for appended script commands.
 					if info.Size() > maxRead {
 						const tailLimit int64 = 128 * 1024
@@ -410,8 +410,11 @@ func inspectFile(p string, info os.FileInfo) *Finding {
 						if scriptScore >= 70 && !isDocumentation {
 							add(45, "Text document contains suspicious script-like text; review, not proof of execution")
 						}
+						inspectRansomNote(name,buf,&score,&reasons)
 					} else if ext == ".7z" {
 						inspectMisnamed7z(buf, &score, &reasons)
+					} else if ext == ".rar" {
+						inspectMisnamedRAR(buf, &score, &reasons)
 					}
 				}
 				if ext == ".lnk" {
