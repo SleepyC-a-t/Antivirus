@@ -71,7 +71,7 @@ func inspectThreatBehavior(data []byte, ext string, score *int, reasons *[]strin
 		// quoted strings, so require at least one invocation in code first.
 		text := flat
 		if rule.category == "Credential access" || rule.category == "Execution" || rule.category == "In-memory execution" ||
-			rule.category == "Script execution" || rule.category == "Exfiltration" {
+			rule.category == "Script execution" || rule.category == "Exfiltration" || rule.category=="Ransomware behavior" {
 			if len(code) < 4 {continue}
 			// Use raw only where code includes the leading command identifier.
 			if strings.Contains(code, rule.require[0]) {text=flatRaw}
@@ -89,6 +89,16 @@ func inspectThreatBehavior(data []byte, ext string, score *int, reasons *[]strin
 			*reasons=append(*reasons, rule.category+": "+rule.label)
 		}
 	}
+	// Suspiciously reconstructed command names matter when immediately invoked.
+	// Concatenation alone, especially in a quotation or example, is insufficient.
+	if ext==".ps1" || ext==".psm1" {
+		reassembled:=regexp.MustCompile(`(?i)['"]in['"]\s*\+\s*['"]voke-expression['"]`)
+		if reassembled.MatchString(decoded) && regexp.MustCompile(`(?i)&\s*\$[a-z_][a-z0-9_]*`).MatchString(decoded) {
+			*score+=68
+			*reasons=append(*reasons,"Script execution: reconstructs and invokes an interpreter command")
+		}
+	}
+
 	// Separate format-aware phishing signal. No automatic action; a password
 	// form alone is too common to classify as a threat.
 	if (ext==".html" || ext==".htm") && htmlPasswordForm.Match(data) && remoteURL.Match(data) {
