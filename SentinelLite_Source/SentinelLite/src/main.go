@@ -92,7 +92,7 @@ func (s *Server) routes() http.Handler {
 	})
 	mux.HandleFunc("/api/snapshot", func(w http.ResponseWriter, r *http.Request) {
 		status, fs := s.app.snapshot()
-		sendJSON(w, map[string]any{"status": status, "findings": fs})
+		sendJSON(w, map[string]any{"status": status, "findings": fs, "product": map[string]string{"name":"SentinelGuard","version":"2.0","type":"advisory static scanner"}})
 	})
 	mux.HandleFunc("/api/start", func(w http.ResponseWriter, r *http.Request) {
 		if !requirePost(w, r) {
@@ -239,7 +239,7 @@ func (s *Server) routes() http.Handler {
 			} else {
 				s.app.mu.Lock()
 				f.CanQuarantine = false
-				f.Reasons = append(f.Reasons, "Moved to SentinelLite quarantine")
+				f.Reasons = append(f.Reasons, "Moved to SentinelGuard quarantine")
 				s.app.findings[f.ID] = f
 				s.app.mu.Unlock()
 			}
@@ -308,8 +308,8 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/report", func(w http.ResponseWriter, r *http.Request) {
 		st, fs := s.app.snapshot()
 		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Content-Disposition", `attachment; filename="SentinelLite_Report.json"`)
-		sendJSON(w, map[string]any{"exportedAt": time.Now(), "status": st, "findings": fs, "notice": "These findings may be false positives. Defender scans are separate from heuristic scans."})
+		w.Header().Set("Content-Disposition", `attachment; filename="SentinelGuard_Report.json"`)
+		sendJSON(w, map[string]any{"product":"SentinelGuard","version":"2.0","exportedAt": time.Now(), "status": st, "findings": fs, "notice": "These findings may be false positives. Defender scans are separate from heuristic scans."})
 	})
 	mux.HandleFunc("/api/exit", func(w http.ResponseWriter, r *http.Request) {
 		if !requirePost(w, r) {
