@@ -79,6 +79,6 @@ func TestStage7RansomNoteAndArchiveFormat(t *testing.T) {
 func TestStage7UIBrandVersion(t *testing.T) {
 	b,err:=pages.ReadFile("ui.html");if err!=nil{t.Fatal(err)}
 	s:=string(b)
-	if !strings.Contains(s,"SentinelGuard") || !strings.Contains(s,"v3.2"){t.Fatal("UI is missing SentinelGuard v3.2 branding")}
+	if !strings.Contains(s,"SentinelGuard") || !strings.Contains(s,"v3.3"){t.Fatal("UI is missing SentinelGuard v3.3 branding")}
 	if strings.Contains(s,"SentinelLite"){t.Fatal("old product name remains in the rendered interface")}
 }

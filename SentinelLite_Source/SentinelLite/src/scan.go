@@ -5,7 +5,9 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -46,6 +48,7 @@ type Status struct {
 	Current  string    `json:"current"`
 	Files    int64     `json:"files"`
 	Skipped  int64     `json:"skipped"`
+    Resources ScanResourceUsage `json:"resources"`
 	SkipLogOmitted int64 `json:"skipLogOmitted"`
 	Findings int       `json:"findings"`
 	Omitted int64 `json:"omitted"`
@@ -65,6 +68,14 @@ type App struct {
 	skipped    int64
 	skippedPaths []SkippedPath
 	skipLogOmitted int64
+    resources ScanResourceUsage
+    resourceDone chan struct{}
+    lastResourceCPU float64
+    lastResourceAt time.Time
+    sumCPUPercent float64
+    sumMemoryMiB float64
+    cpuObservations int64
+    memObservations int64
 	omitted int64
 }
 
@@ -101,6 +112,7 @@ func (a *App) snapshot() (Status, []Finding) {
 	s.Skipped = atomic.LoadInt64(&a.skipped)
 	s.Omitted = atomic.LoadInt64(&a.omitted)
 	s.SkipLogOmitted = a.skipLogOmitted
+    s.Resources = a.resources
 	fs := make([]Finding, 0, len(a.order))
 	for _, id := range a.order {
 		fs = append(fs, a.findings[id])
@@ -124,10 +136,12 @@ func (a *App) begin(mode string) (context.Context, error) {
 	a.skippedPaths = nil
 	a.skipLogOmitted = 0
 	a.status = Status{Active: true, Mode: mode, Started: time.Now()}
+    a.resetMetricsLocked()
 	a.cancel = cancel
 	return ctx, nil
 }
 func (a *App) finish(err error) {
+    a.stopResources()
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.status.Active = false
@@ -138,6 +152,7 @@ func (a *App) finish(err error) {
 		a.status.Error = "Scan stopped by user. Results are partial."
 	}
 	a.cancel = nil
+    log.Printf("Scan finished: mode=%s files=%d skipped=%d findings=%d omitted=%d error=%q",a.status.Mode,atomic.LoadInt64(&a.files),atomic.LoadInt64(&a.skipped),a.status.Findings,atomic.LoadInt64(&a.omitted),a.status.Error)
 }
 func (a *App) stop() {
 	a.mu.RLock()
@@ -302,11 +317,18 @@ func (a *App) runHeuristic(ctx context.Context, mode, custom string) error {
 		limit = 1
 	}
 	jobs := make(chan string, 128)
+    workerFailures:=make(chan string,limit)
 	var wg sync.WaitGroup
 	for i := 0; i < limit; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+            defer func(){
+                if incident:=recover();incident!=nil {
+                    log.Printf("scanner worker error: %v",incident)
+                    select{case workerFailures<-fmt.Sprint("scanner worker failure; see local diagnostics log"):default:}
+                }
+            }()
 			for p := range jobs {
 				if ctx.Err() != nil {
 					continue
@@ -356,6 +378,8 @@ func (a *App) runHeuristic(ctx context.Context, mode, custom string) error {
 	}
 	close(jobs)
 	wg.Wait()
+    close(workerFailures)
+    if len(workerFailures)>0 {return errors.New(<-workerFailures)}
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -394,9 +418,7 @@ func inspectFileDetailed(p string, info os.FileInfo, onReadError func(string)) *
 	if windowsSystemNames[base] && !isLegitimateSystemPath(lower) && !isWindowsComponentStorePath(lower) {
 		if info.Size() >= 512 && hasPEFileSignature(p) {
 			add(65, "Windows system-process filename outside a system directory (file has PE signature)")
-		} else {
-			add(45, "Resembles a Windows system-process filename outside a system directory; may be a harmless renamed file")
-		}
+		} // Mere filename resemblance without a PE header is not enough.
 	}
 	if startup && (executableExtensions[ext] || scriptExtensions[ext]) {
 		add(55, "Executable or script located in a Windows Startup folder")
@@ -414,7 +436,7 @@ func inspectFileDetailed(p string, info os.FileInfo, onReadError func(string)) *
 		add(22, "Executable or library within roaming application data (can be legitimate)")
 	}
 
-	inspectContent := isThreatScriptExtension(ext) || ext==".html" || ext==".htm" || ext==".sys" || scriptExtensions[ext] || executableExtensions[ext] || isDocumentOrImage(ext) || ext == ".lnk" || isZIPContainer(ext) || riskExtensions[ext] || stage9InspectableExtension(ext) || stage10InspectableExtension(ext) || stage11InspectableExtension(ext) || score > 0
+	inspectContent := isThreatScriptExtension(ext) || ext==".html" || ext==".htm" || ext==".sys" || scriptExtensions[ext] || executableExtensions[ext] || isDocumentOrImage(ext) || ext == ".lnk" || isZIPContainer(ext) || riskExtensions[ext] || stage9InspectableExtension(ext) || stage10InspectableExtension(ext) || stage11InspectableExtension(ext) || stage12InspectableExtension(ext) || score > 0
 	if inspectContent {
 		if isZIPContainer(ext) {
             if info.Size() <= 512*1024*1024 {
@@ -430,7 +452,7 @@ func inspectFileDetailed(p string, info os.FileInfo, onReadError func(string)) *
 		if isThreatScriptExtension(ext) || ext==".html" || ext==".htm" {
 			maxRead = 2 * 1024 * 1024
 		}
-		if stage9InspectableExtension(ext) || stage10InspectableExtension(ext) || stage11InspectableExtension(ext) {
+		if stage9InspectableExtension(ext) || stage10InspectableExtension(ext) || stage11InspectableExtension(ext) || stage12InspectableExtension(ext) {
 			maxRead = 512 * 1024
 		}
 		if ext==".lnk" { maxRead=128*1024 }
@@ -483,7 +505,8 @@ func inspectFileDetailed(p string, info os.FileInfo, onReadError func(string)) *
 				inspectPEFileMetadata(buf, ext, &score, &reasons)
 				inspectStage9Content(name, ext, buf, &score, &reasons)
 				inspectStage10Content(name, ext, buf, &score, &reasons)
-                inspectStage11Content(name, ext, buf, &score, &reasons)
+				inspectStage11Content(name, ext, buf, &score, &reasons)
+                inspectStage12Content(name, ext, buf, &score, &reasons)
                 _ = fh.Close()
             } else if onReadError!=nil {
                 onReadError("file content could not be opened: "+err.Error())
@@ -503,9 +526,9 @@ func inspectFileDetailed(p string, info os.FileInfo, onReadError func(string)) *
 		score = 150
 	}
 	f:= &Finding{Path: p, Name: name, Score: score, Severity: severity, Source: "Heuristics", Reasons: reasons, Size: info.Size(), Modified: info.ModTime(), CanQuarantine: true}
-	if info.Size()>2*1024*1024*1024 {
-		f.CanQuarantine=false
-		f.Reasons=append(f.Reasons,"Quarantine unavailable: file exceeds 2 GiB limit")
+	if info.Size()>256*1024*1024 {
+        f.CanQuarantine=false
+        f.Reasons=append(f.Reasons,"Manual review required: files over 256 MiB are not hashed or quarantined by this scanner")
 	} else if hash,err:=fileSHA256(p);err==nil {
 		f.ReviewSHA256=hash
 	} else {
@@ -520,10 +543,13 @@ func inspectFileDetailed(p string, info os.FileInfo, onReadError func(string)) *
 // impersonation rules must not flag those copies merely for their location.
 // Do not broadly trust application directories: inspect content as usual.
 func isWindowsComponentStorePath(lower string) bool {
-	windir:=strings.ToLower(filepath.Clean(os.Getenv("WINDIR")))
-	if windir=="." {windir=`c:\windows`}
-	clean:=strings.ToLower(filepath.Clean(lower))
-	return strings.HasPrefix(clean,strings.ToLower(filepath.Join(windir,"winsxs"))+string(os.PathSeparator))
+    // Windows-style path comparison also works in cross-platform unit tests.
+    normalize:=func(s string)string{return strings.ToLower(strings.ReplaceAll(s,"/",`\`))}
+    windir:=normalize(os.Getenv("WINDIR"))
+    if windir==""{windir=`c:\windows`}
+    windir=strings.TrimRight(windir,`\`)
+    path:=normalize(lower)
+    return strings.HasPrefix(path,windir+`\winsxs\`)
 }
 
 func isLegitimateSystemPath(lower string) bool {

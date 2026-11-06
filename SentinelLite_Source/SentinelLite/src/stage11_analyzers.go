@@ -91,7 +91,9 @@ func inspectStage11Content(name,ext string,data []byte,score *int,reasons *[]str
         }
     case ".ps1",".psm1":
         code:=strings.ToLower(codeOnlyForSignals(src))
-        if strings.Contains(lower,"http") && stage11ShellDownload.MatchString(code) &&
+        // Local silent MSI installations are common in legitimate browser setup.
+        localInstaller:=strings.Contains(code,"start-process msiexec") || strings.Contains(code,"start-process -filepath msiexec")
+        if !localInstaller && strings.Contains(lower,"http") && stage11ShellDownload.MatchString(code) &&
            (strings.Contains(lower,".exe") || strings.Contains(lower,".ps1") || strings.Contains(lower,".cmd")) {
             add(56,"PowerShell downloads a file and then launches a process (review source and destination)")
         }

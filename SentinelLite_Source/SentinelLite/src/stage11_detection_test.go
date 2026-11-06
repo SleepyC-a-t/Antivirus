@@ -150,7 +150,7 @@ func TestStage11ReportIncludesSkippedPaths(t *testing.T) {
         Status Status `json:"status"`
     }
     if err:=json.Unmarshal(w.Body.Bytes(),&report);err!=nil{t.Fatal(err)}
-    if report.Version!="3.2" || len(report.SkippedPaths)!=1 || report.Status.Skipped!=1 ||
+    if report.Version!="3.3" || len(report.SkippedPaths)!=1 || report.Status.Skipped!=1 ||
       report.SkippedPaths[0].Path!=`C:\Users\Example\Documents\restricted.txt` {
        t.Fatalf("report fields incorrect: %+v",report)
     }
