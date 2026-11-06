@@ -11,6 +11,8 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
+	"sync/atomic"
 	"time"
 )
 
@@ -21,6 +23,8 @@ type Server struct {
 	app     *App
 	token   string
 	address string
+	folderPicker func() (string, error) // optional test override
+	pickingFolder atomic.Bool
 }
 
 func sendJSON(w http.ResponseWriter, val any) {
@@ -103,6 +107,46 @@ func (s *Server) routes() http.Handler {
 		status, fs := s.app.snapshot()
 		sendJSON(w, map[string]any{"status": status, "findings": fs, "product": map[string]string{"name": "SentinelGuard", "version": "3.3", "type": "advisory static scanner"}})
 	})
+	mux.HandleFunc("/api/choose-folder", func(w http.ResponseWriter, r *http.Request) {
+        if !requirePost(w, r) { return }
+        // One native dialog at a time. It is interactive and may remain open
+        // while the user navigates Explorer.
+        if !s.pickingFolder.CompareAndSwap(false, true) {
+            apiError(w, http.StatusConflict, errors.New("a folder picker is already open"))
+            return
+        }
+        defer s.pickingFolder.Store(false)
+        s.app.mu.RLock()
+        active := s.app.status.Active
+        s.app.mu.RUnlock()
+        if active {
+            apiError(w, http.StatusConflict, errors.New("stop the scan before selecting another folder"))
+            return
+        }
+        picker := chooseScanFolder
+        if s.folderPicker != nil { picker = s.folderPicker }
+        path, err := picker()
+        if errors.Is(err, errFolderPickerCanceled) {
+            sendJSON(w, map[string]any{"cancelled": true})
+            return
+        }
+        if err != nil {
+            apiError(w, http.StatusInternalServerError, err)
+            return
+        }
+        // Never accept a nonexistent file, a virtual Shell namespace item,
+        // or a reparse-point target that the crawler intentionally won't scan.
+        info, err := os.Lstat(path)
+        if err != nil {
+            apiError(w, http.StatusBadRequest, err)
+            return
+        }
+        if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || isReparse(path) {
+            apiError(w, http.StatusBadRequest, errors.New("select a regular folder, not a file, symlink or junction"))
+            return
+        }
+        sendJSON(w, map[string]any{"folder": filepath.Clean(path), "cancelled": false})
+    })
 	mux.HandleFunc("/api/start", func(w http.ResponseWriter, r *http.Request) {
 		if !requirePost(w, r) {
 			return

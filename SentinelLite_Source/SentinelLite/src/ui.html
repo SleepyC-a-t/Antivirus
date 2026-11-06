@@ -43,8 +43,8 @@ button{background:#203149;border:1px solid #39516b;color:#dce7f9;padding:10px 14
     <div class="control-label">Scanning engine</div>
     <label class="choice"><input type="radio" name="engine" value="heuristic" checked><div><b>Fast heuristic review</b><span>Inspects file metadata, script commands, persistence signals, archive entries, and suspicious behavior combinations.</span></div></label>
     <label class="choice"><input type="radio" name="engine" value="defender"><div><b>Microsoft Defender scan</b><span>Uses installed antivirus signatures without requested remediation. May be much slower.</span></div></label>
-    <label class="control-label" for="mode">Scan scope</label><select id="mode"><option value="quick">Quick · User & startup folders</option><option value="full">Full · All local drive letters</option><option value="custom">Custom · File or folder path</option></select>
-    <div id="customWrap" class="hide"><label class="control-label" for="customPath">Absolute file or folder path</label><input id="customPath" type="text" placeholder="C:\Users\You\Downloads" spellcheck="false" autocomplete="off"></div>
+    <label class="control-label" for="mode">Scan scope</label><select id="mode"><option value="quick">Quick · User & startup folders</option><option value="full">Full · All local drive letters</option><option value="custom">Custom · Choose a folder</option></select>
+    <div id="customWrap" class="hide"><label class="control-label" for="customPath">Folder to scan (including subfolders)</label><button type="button" class="outline btn-full" id="browseFolder">Browse folders…</button><input id="customPath" type="text" placeholder="Choose a folder above, or enter a path" spellcheck="false" autocomplete="off" aria-label="Selected folder path"><p class="hint" style="margin:6px 0 0">Select a folder in the Windows picker and click <b>Choose folder</b>. SentinelGuard will examine accessible files in that folder and its subfolders. You can also enter a path manually.</p></div>
     <button class="primary btn-full" id="scan">Start scan</button><button class="outline btn-full hide" id="cancel">Stop scanning</button>
     <p class="hint" id="engineHint">Bounded, read-only inspection of suspicious patterns; no file execution or automatic quarantine.</p>
     <div id="defenderNote" class="info warn hide"><strong>About Defender:</strong> Uses the documented <span class="kbd">-DisableRemediation</span> scan switch. Defender's *separate real-time protection* can still act under your existing Windows settings. Administrator access may be required.</div>
@@ -122,6 +122,7 @@ function renderStatus(){
  $('statusText').style.color=(s.active&&!disconnected)?'var(--accent)':'';
  $('meter').classList.toggle('on',!!s.active&&!disconnected);
  $('scan').disabled=!!s.active||state.starting||disconnected;
+ $('browseFolder').disabled=!!s.active||state.starting||disconnected;
  $('cancel').classList.toggle('hide',!s.active||disconnected);
  $('current').textContent=s.current|| (s.active?'Initializing scanner…':'No scan in progress.');
  let warning=[s.error,s.omitted?`${fmt(s.omitted)} suspicious findings omitted at the 3,000-result limit; results incomplete.`:'',disconnected?'Local scanner unavailable. Values shown are stale. If the executable stopped, inspect the app-data SentinelGuard diagnostics log (Logs folder) for diagnostics.':''].filter(Boolean).join(' | ');
@@ -139,7 +140,21 @@ async function refresh(){
 }
 async function refreshVault(){try{state.vault=(await api('/api/vault')).items||[];renderVault();}catch(e){toastError(e)}}
 function tabs(name){state.activeTab=name;for(let b of document.querySelectorAll('[data-tab]'))b.classList.toggle('active',b.dataset.tab===name);$('findingsTab').classList.toggle('hide',name!=='findings');$('vaultTab').classList.toggle('hide',name!=='vault');if(name==='vault')refreshVault();else renderFindings()}
-async function start(){try{state.starting=true;renderStatus();state.selected.clear();let engine=document.querySelector('[name=engine]:checked').value,mode=$('mode').value,path=$('customPath').value;await api('/api/start',{engine,mode,path});await refresh();}catch(e){toastError(e)}finally{state.starting=false;renderStatus()}}
+async function chooseFolder(){
+ const btn=$('browseFolder');
+ btn.disabled=true;btn.textContent='Folder picker open…';
+ try{
+   const choice=await api('/api/choose-folder',{});
+   if(!choice.cancelled && choice.folder){
+     $('customPath').value=choice.folder;
+     $('customPath').title=choice.folder;
+     $('mode').value='custom';
+     $('customWrap').classList.remove('hide');
+   }
+ }catch(e){toastError(e)}
+ finally{btn.disabled=false;btn.textContent='Browse folders…'}
+}
+async function start(){try{state.starting=true;renderStatus();state.selected.clear();let engine=document.querySelector('[name=engine]:checked').value,mode=$('mode').value,path=$('customPath').value;if(mode==='custom'&&!path.trim()){alert('Choose a folder using Browse folders… before starting.');return;}await api('/api/start',{engine,mode,path});await refresh();}catch(e){toastError(e)}finally{state.starting=false;renderStatus()}}
 function showDetail(id){let f=state.findings.find(x=>x.id===id);if(!f)return;state.detail=f;$('modalBadge').textContent=f.severity.toUpperCase()+' · '+f.source;$('modalTitle').textContent=f.name;$('modalMeta').textContent=bytes(f.size)+' · Score '+f.score+' / 150 · '+(f.modified?new Date(f.modified).toLocaleString():'File metadata unavailable');$('modalPath').textContent=f.path;$('modalReasons').innerHTML=(f.reasons||[]).map(x=>`<li>${esc(x)}</li>`).join('');$('modalHash').classList.add('hide');$('getHash').disabled=!f.canQuarantine;$('showLocation').disabled=!f.canQuarantine;$('modalBackdrop').classList.remove('hide')}
 $('modalClose').onclick=()=>$('modalBackdrop').classList.add('hide');$('modalBackdrop').addEventListener('click',e=>{if(e.target===$('modalBackdrop'))$('modalClose').click()});window.addEventListener('keydown',e=>{if(e.key==='Escape')$('modalClose').click()});
 $('copyPath').onclick=()=>{if(state.detail)navigator.clipboard.writeText(state.detail.path).catch(()=>alert('Clipboard blocked by browser. Select and copy the path above.'))};
@@ -152,6 +167,7 @@ $('search').oninput=renderFindings;$('filter').onchange=renderFindings;
 $('quarantineSelected').onclick=async()=>{let ids=[...state.selected].filter(id=>state.findings.some(f=>f.id===id&&f.canQuarantine));if(ids.length>100){alert('Select up to 100 files per batch.');return}if(!ids.length)return;if(!confirm(`Quarantine ${ids.length} selected file(s)?\n\nOnly approve files that you have reviewed. This will MOVE the files, which may affect installed applications or Windows startup. You can later restore them.`))return;try{let j=await api('/api/quarantine',{IDs:ids,Confirm:true});let failures=j.results.filter(x=>x.status!=='ok');alert(`${j.results.length-failures.length} file(s) moved to quarantine.${failures.length?'\n\nFailed:\n'+failures.map(x=>x.name+': '+x.error).join('\n'):''}`);await refresh();await refreshVault()}catch(e){toastError(e)}};
 $('vaultRows').addEventListener('click',async e=>{let restore=e.target.closest('[data-restore]'),del=e.target.closest('[data-delete]');if(restore){let it=state.vault.find(x=>x.id===restore.dataset.restore);if(!it)return;if(!confirm(`RESTORE this file to its original location?\n\n${it.original}\n\nRestoring a malicious file can reintroduce danger. Proceed only if this is a false positive.`))return;try{await api('/api/vault-action',{ID:it.id,Action:'restore',Confirm:true});await refreshVault()}catch(e){toastError(e)}}else if(del){let it=state.vault.find(x=>x.id===del.dataset.delete);if(!it)return;let answer=prompt(`PERMANENTLY DELETE quarantined file:\n${it.name}\n\nThis cannot be undone. Type DELETE to proceed:`);if(answer!=='DELETE')return;try{await api('/api/vault-action',{ID:it.id,Action:'delete',Confirm:true});await refreshVault()}catch(e){toastError(e)}}});
 $('mode').onchange=()=>{$('customWrap').classList.toggle('hide',$('mode').value!=='custom')};
+$('browseFolder').onclick=chooseFolder;
 function updateEngine(){let defender=document.querySelector('[name=engine]:checked').value==='defender';$('defenderNote').classList.toggle('hide',!defender);$('engineHint').textContent=defender?'Defender uses its installed signature database. Scans might take a long time.':'Efficient metadata analysis, with limited inspection of relevant file contents.'}
 document.querySelectorAll('[name=engine]').forEach(e=>e.onchange=updateEngine);
 $('scan').onclick=start;$('cancel').onclick=async()=>{try{await api('/api/stop',{})}catch(e){toastError(e)}};
