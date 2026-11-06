@@ -51,17 +51,37 @@ var ruleSpace = regexp.MustCompile(`\s+`)
 var remoteURL = regexp.MustCompile(`(?i)https?://`)
 var htmlPasswordForm = regexp.MustCompile(`(?i)<form\b[\s\S]{0,900}password`)
 
+var threatQuickKeywords = [...]string{
+	"vssadmin","bcdedit","wbadmin","sc create","register-wmievent","wmic",
+	"psexec","reg add","regsvr32","rundll32","msiexec","bitsadmin",
+	"procdump","copy-item","protecteddata","invoke-restmethod","curl",
+	"nslookup","get-clipboard","createobject(","amsiutils","virtualalloc",
+	"ntunmapviewofsection","exec(","get-childitem","voke-expression",
+}
+func hasThreatIndicators(raw string) bool {
+	for _, token := range threatQuickKeywords {
+		if strings.Contains(raw,token) {return true}
+	}
+	return false
+}
+
 func inspectThreatBehavior(data []byte, ext string, score *int, reasons *[]string) {
-	// Bound the analysis to the existing head/tail sampling policy.
-	if len(data) == 0 {return}
-	decoded := decodeScriptText(data)
-	raw := strings.ToLower(decoded)
-	// Ordinary documents are not malware merely for mentioning APIs.
-	if ext == ".txt" || ext == ".md" {return}
-	// Filter literal comments and quoted examples for rules that inspect commands.
-	// Raw is retained only when a string argument is necessary for matching an API
-	// call, paired with code-side evidence.
-	code := strings.ToLower(codeOnlyForSignals(decoded))
+	if len(data)==0 {return}
+	// HTML has its own conservative, low-confidence form check.
+	if ext==".html" || ext==".htm" {
+		if htmlPasswordForm.Match(data) && remoteURL.Match(data) {
+			*score+=40
+			*reasons=append(*reasons,"Web content: password form with a remote destination (could be legitimate)")
+		}
+		return
+	}
+	if !isThreatScriptExtension(ext) {return}
+	decoded:=decodeScriptText(data)
+	raw:=strings.ToLower(decoded)
+	// Most files contain none of the behavior indicators. Skip costly lexical
+	// normalization for those files; still inspect every matching file below.
+	if !hasThreatIndicators(raw) {return}
+	code:=strings.ToLower(codeOnlyForSignals(decoded))
 	flat := ruleSpace.ReplaceAllString(code, " ")
 	flatRaw := ruleSpace.ReplaceAllString(raw, " ")
 	for _, rule := range threatRules {
@@ -99,12 +119,6 @@ func inspectThreatBehavior(data []byte, ext string, score *int, reasons *[]strin
 		}
 	}
 
-	// Separate format-aware phishing signal. No automatic action; a password
-	// form alone is too common to classify as a threat.
-	if (ext==".html" || ext==".htm") && htmlPasswordForm.Match(data) && remoteURL.Match(data) {
-		*score+=40
-		*reasons=append(*reasons,"Web content: password form with a remote destination (could be legitimate)")
-	}
 }
 
 func isThreatScriptExtension(ext string) bool {
