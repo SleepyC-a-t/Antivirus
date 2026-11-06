@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -318,7 +317,9 @@ var scriptExtensions = map[string]bool{".ps1": true, ".psm1": true, ".vbs": true
 var executableExtensions = map[string]bool{".exe": true, ".com": true, ".scr": true, ".pif": true, ".dll": true, ".cpl": true, ".msi": true}
 var riskExtensions = map[string]bool{".lnk": true, ".jar": true, ".iso": true, ".img": true, ".zip": true, ".7z": true, ".rar": true}
 var windowsSystemNames = map[string]bool{"svchost.exe": true, "lsass.exe": true, "csrss.exe": true, "winlogon.exe": true, "services.exe": true, "smss.exe": true, "taskhostw.exe": true, "spoolsv.exe": true, "conhost.exe": true}
-var encodedCommandPattern = regexp.MustCompile(`(?i)(?:powershell(?:\.exe)?\s+[^\r\n]{0,120})-(?:enc|e)\s+[a-z0-9+/=]{28,}`)
+var encodedCommandPattern = regexp.MustCompile(`(?i)(?:powershell(?:\.exe)?\s+[^\r\n]{0,120})-(?:encodedcommand|enc|en|e)\s+[a-z0-9+/=]{28,}`)
+var executeScriptPattern = regexp.MustCompile(`(?i)\b(?:iex|invoke-expression)\b`)
+var pipeInterpreterPattern = regexp.MustCompile(`(?i)\b(?:curl(?:\.exe)?|wget(?:\.exe)?)\s+[^\r\n|]{0,500}https?://[^\s|]+[^\r\n]{0,200}\|\s*(?:powershell(?:\.exe)?|pwsh(?:\.exe)?|cmd(?:\.exe)?)\b`)
 var eicar = []byte(`X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*`)
 
 func inspectFile(p string, info os.FileInfo) *Finding {
@@ -374,16 +375,28 @@ func inspectFile(p string, info os.FileInfo) *Finding {
 			fh, err := os.Open(p)
 			if err == nil {
 				buf, _ := io.ReadAll(io.LimitReader(fh, maxRead))
-				_ = fh.Close()
-				if bytes.Contains(buf, eicar) {
-					add(110, "EICAR antivirus test string (harmless test signature, not actual malware)")
+				if isExactEICAR(buf) && info.Size() == int64(len(buf)) {
+					add(110, "Exact EICAR antivirus test file (harmless standardized test, not malware)")
 				}
 				if scriptExtensions[ext] {
+					// Check an additional bounded tail sample for appended script commands.
+					if info.Size() > maxRead {
+						const tailLimit int64 = 64 * 1024
+						if _, err := fh.Seek(-min(info.Size(), tailLimit), io.SeekEnd); err == nil {
+							tail, _ := io.ReadAll(io.LimitReader(fh, tailLimit))
+							buf = append(buf, '\n')
+							buf = append(buf, tail...)
+						}
+					}
 					inspectScript(buf, &score, &reasons)
+				}
+				if ext == ".lnk" {
+					inspectShortcut(buf, &score, &reasons)
 				}
 				if isDocumentOrImage(ext) && isPEHeader(buf) {
 					add(80, "Valid PE executable header disguised as a document or image")
 				}
+				_ = fh.Close()
 			}
 		}
 	}
@@ -420,16 +433,19 @@ func inspectScript(buf []byte, score *int, reasons *[]string) {
 	if len(buf) == 0 {
 		return
 	}
-	lower := strings.ToLower(decodeScriptText(buf))
+	lower := strings.ToLower(stripLineComments(decodeScriptText(buf)))
 	add := func(n int, desc string) { *score += n; *reasons = append(*reasons, desc) }
 	encoded := strings.Contains(lower, "-encodedcommand") || encodedCommandPattern.MatchString(lower)
 	if encoded {
 		add(52, "PowerShell encoded command or obfuscated execution")
 	}
-	download := strings.Contains(lower, "downloadstring") || strings.Contains(lower, "downloadfile") || strings.Contains(lower, "invoke-webrequest") || strings.Contains(lower, "new-object net.webclient") || strings.Contains(lower, "start-bitstransfer")
-	execute := strings.Contains(lower, "invoke-expression") || strings.Contains(lower, "iex(") || strings.Contains(lower, "iex (") || strings.Contains(lower, "scriptblock]::create")
+	download := strings.Contains(lower, "downloadstring") || strings.Contains(lower, "downloadfile") || strings.Contains(lower, "downloaddata") || strings.Contains(lower, "invoke-restmethod") || strings.Contains(lower, "invoke-webrequest") || strings.Contains(lower, "new-object net.webclient") || strings.Contains(lower, "start-bitstransfer")
+	execute := executeScriptPattern.MatchString(lower) || strings.Contains(lower, "scriptblock]::create")
 	if download && execute {
 		add(85, "Downloads remote content and directly executes it")
+	}
+	if pipeInterpreterPattern.MatchString(lower) {
+		add(75, "Pipes downloaded network data into a command interpreter")
 	}
 	if strings.Contains(lower, "frombase64string") && execute {
 		add(58, "Decodes Base64 content and executes it")
@@ -445,6 +461,9 @@ func inspectScript(buf []byte, score *int, reasons *[]string) {
 	}
 	if strings.Contains(lower, "wscript.shell") && strings.Contains(lower, "regwrite") && strings.Contains(lower, `\currentversion\run`) {
 		add(70, "Writes persistence into a Windows Run registry key")
+	}
+	if strings.Contains(lower, "reg add") && strings.Contains(lower, `\currentversion\run`) && strings.Contains(lower, " /d ") {
+		add(62, "Adds a Windows Run registry entry (may be legitimate; review the command)")
 	}
 }
 
