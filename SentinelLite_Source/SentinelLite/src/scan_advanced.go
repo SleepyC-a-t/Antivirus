@@ -3,6 +3,8 @@ package main
 import (
  "archive/zip"
  "bytes"
+ "crypto/sha256"
+ "encoding/hex"
  "encoding/binary"
  "io"
  "path/filepath"
@@ -103,13 +105,22 @@ func inspectArchiveEntries(files []*zip.File,depth int,budget *int64,score *int,
 
 
 // Only match an EICAR test file, not a document that quotes the test string.
+// EICAR is a 68-byte standardized harmless test file. Check its digest
+// instead of embedding the full detector-triggering test signature inside
+// the shipped EXE. The complete signature is never stored in release data.
+const eicarTestLength = 68
+const eicarTestSHA256 = "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
+
 func isExactEICAR(buf []byte) bool {
- if len(buf)<len(eicar)||len(buf)>128||!bytes.HasPrefix(buf,eicar){return false}
- for _,b:=range buf[len(eicar):]{
+ if len(buf)<eicarTestLength || len(buf)>128 {return false}
+ digest:=sha256.Sum256(buf[:eicarTestLength])
+ if hex.EncodeToString(digest[:])!=eicarTestSHA256 {return false}
+ for _,b:=range buf[eicarTestLength:]{
   switch b {case ' ', '\t', '\n', '\r', 0x1a: default:return false}
  }
  return true
 }
+
 func stripLineComments(source string) string {
  var result strings.Builder
  result.Grow(len(source))
