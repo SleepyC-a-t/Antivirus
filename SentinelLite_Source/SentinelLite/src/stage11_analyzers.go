@@ -16,7 +16,6 @@ func stage11InspectableExtension(ext string) bool {
 }
 
 var stage11SVGScript=regexp.MustCompile(`(?is)<script\b[^>]{0,300}>[\s\S]*?</script\s*>`)
-var stage11EncodedDownload=regexp.MustCompile(`(?is)\batob\s*\([\s\S]{0,500}\)[\s\S]{0,2500}\b(?:blob\s*\(|createobjecturl\s*\()`)
 var stage11ShellDownload=regexp.MustCompile(`(?is)\binvoke-(?:webrequest|restmethod)\b[\s\S]{0,450}-(?:outfile|output)\b[\s\S]{0,500}\bstart-process\b`)
 var stage11SCFHeader=regexp.MustCompile(`(?im)^\s*\[shell\]\s*$`)
 
