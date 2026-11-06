@@ -92,7 +92,7 @@ func inspectThreatBehavior(data []byte, ext string, score *int, reasons *[]strin
 	}
 	// Separate format-aware phishing signal. No automatic action; a password
 	// form alone is too common to classify as a threat.
-	if (ext==".html" || ext==".htm") && htmlPasswordForm.MatchString(data) && remoteURL.MatchString(data) {
+	if (ext==".html" || ext==".htm") && htmlPasswordForm.Match(data) && remoteURL.Match(data) {
 		*score+=40
 		*reasons=append(*reasons,"Web content: password form with a remote destination (could be legitimate)")
 	}
