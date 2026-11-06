@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// SentinelGuard v2.0: rule-based threat behavior triage.
+// SentinelGuard v2.1: rule-based threat behavior triage.
 // Signals are not a verdict that a file is malicious. Every finding must be
 // reviewed before quarantine. Inspecting a file NEVER executes its content.
 type threatRule struct {
@@ -85,6 +85,10 @@ func inspectThreatBehavior(data []byte, ext string, score *int, reasons *[]strin
 	flat := ruleSpace.ReplaceAllString(code, " ")
 	flatRaw := ruleSpace.ReplaceAllString(raw, " ")
 	for _, rule := range threatRules {
+		// These five v2.0 checks produced 114 of 158 false-positive
+		// candidates in the observed clean-machine scan. Stage 8 evaluates
+		// them as tightly scoped command patterns, not unrelated substrings.
+		if stage8ContextualRule(rule.label) {continue}
 		// Restrict rules to executable / script-like files, not static prose.
 		if !isThreatScriptExtension(ext) {continue}
 		// Evaluate code tokens; some commands embed important parameters in
@@ -109,6 +113,7 @@ func inspectThreatBehavior(data []byte, ext string, score *int, reasons *[]strin
 			*reasons=append(*reasons, rule.category+": "+rule.label)
 		}
 	}
+	inspectStage8Context(decoded,ext,score,reasons)
 	// Suspiciously reconstructed command names matter when immediately invoked.
 	// Concatenation alone, especially in a quotation or example, is insufficient.
 	if ext==".ps1" || ext==".psm1" {
@@ -137,8 +142,11 @@ func inspectPEFileMetadata(buf []byte, ext string, score *int, reasons *[]string
 	if offset+24>len(buf){return}
 	sections:=int(binary.LittleEndian.Uint16(buf[offset+6:offset+8]))
 	if sections>24 {
-		*score+=42
-		*reasons=append(*reasons, "PE anomaly: unusually large section count (needs investigation)")
+		// An unusually high section count is not independently malicious.
+		// It is common in legitimate kernels and device drivers. Only
+		// corroborating suspicious signals should elevate the file.
+		*score+=12
+		*reasons=append(*reasons, "PE metadata: unusually large section count (weak signal only)")
 	}
 	// We intentionally do not flag high entropy or ordinary unsigned
 	// executables: both commonly occur in legitimate software.
