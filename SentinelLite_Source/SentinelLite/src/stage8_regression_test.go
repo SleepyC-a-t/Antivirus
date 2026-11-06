@@ -3,7 +3,6 @@ package main
 import (
  "encoding/binary"
  "fmt"
- "fmt"
  "os"
  "path/filepath"
  "strings"
