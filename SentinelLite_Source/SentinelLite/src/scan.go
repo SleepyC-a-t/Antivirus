@@ -345,8 +345,12 @@ func inspectFile(p string, info os.FileInfo) *Finding {
 	if doubleExt.MatchString(name) {
 		add(80, "Disguised double extension (for example document.pdf.exe)")
 	}
-	if windowsSystemNames[base] && !isLegitimateSystemPath(lower) && info.Size() >= 512 && hasPEFileSignature(p) {
-		add(65, "Uses a Windows system-process filename outside a normal system directory")
+	if windowsSystemNames[base] && !isLegitimateSystemPath(lower) {
+		if info.Size() >= 512 && hasPEFileSignature(p) {
+			add(65, "Windows system-process filename outside a system directory (file has PE signature)")
+		} else {
+			add(45, "Resembles a Windows system-process filename outside a system directory; may be a harmless renamed file")
+		}
 	}
 	if startup && (executableExtensions[ext] || scriptExtensions[ext]) {
 		add(55, "Executable or script located in a Windows Startup folder")
