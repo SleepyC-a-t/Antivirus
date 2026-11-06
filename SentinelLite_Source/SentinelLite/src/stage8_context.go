@@ -25,9 +25,28 @@ var stage8PythonExec = regexp.MustCompile(`(?i)\bexec\s*\([\s\S]{0,350}\burlopen
 var stage8ShellPipe = regexp.MustCompile(`(?i)\b(?:curl|wget)(?:\.exe)?\b[^\r\n]{0,350}\|\s*(?:sh|bash)(?:\s|$|[;&])`)
 var stage8XMLHTTP = regexp.MustCompile(`(?i)\bcreateobject\s*\([^\r\n]{0,100}xmlhttp[^\r\n]{0,250}\.\s*open\b`)
 var stage8PsExec = regexp.MustCompile(`(?i)(?:^|[\r\n&;])\s*(?:[^\r\n]{0,120}[\s])?psexec(?:\.exe)?\s+\\\\[^\s\\]+`)
+// These patterns deliberately require an invocation and nearby arguments.
+// Merely mentioning an API or DLL in documentation is insufficient.
+var stage8ComsvcsDump = regexp.MustCompile(`(?i)\brundll32(?:\.exe)?\s+[^\r\n]{0,160}comsvcs\.dll[^\r\n]{0,30}minidump\b`)
+var stage8RemoteAssembly = regexp.MustCompile(`(?is)(?:reflection\.)?assembly\]::load\s*\([\s\S]{0,350}\bdownload(?:data|string)\s*\(`)
 var stage8DNS = regexp.MustCompile(`(?i)\bnslookup(?:\.exe)?\s+(?:\$\{?[a-z_][a-z0-9_]*\}?|%[a-z_][a-z0-9_]*%|\$[a-z_][a-z0-9_]*\.)[^\r\n]{0,160}`)
 
 func inspectStage8Context(source, ext string, score *int, reasons *[]string) {
+	if ext==".cmd" || ext==".bat" || ext==".ps1" || ext==".psm1" {
+		code:=strings.ToLower(codeOnlyForSignals(source))
+		if stage8ComsvcsDump.MatchString(code) {
+			*score+=92
+			*reasons=append(*reasons,"Credential access: rundll32 invokes comsvcs.dll MiniDump (review requested)")
+		}
+	}
+	if ext==".ps1" || ext==".psm1" {
+		// A download nested inside Assembly::Load has considerably stronger
+		// evidential value than an isolated reflection API reference.
+		if stage8RemoteAssembly.MatchString(source) && strings.Contains(strings.ToLower(codeOnlyForSignals(source)),"assembly]::load") {
+			*score+=84
+			*reasons=append(*reasons,"In-memory execution: loads an assembly from downloaded bytes")
+		}
+	}
 	// Strip non-executing comments and quoted examples before looking for a
 	// leading command. Certain signatures use string arguments as parameters
 	// and therefore examine raw text only after checking the command type.
