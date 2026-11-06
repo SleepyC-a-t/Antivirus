@@ -28,6 +28,7 @@ type Finding struct {
 	Size          int64     `json:"size"`
 	Modified      time.Time `json:"modified"`
 	CanQuarantine bool      `json:"canQuarantine"`
+	ReviewSHA256 string `json:"-"`
 }
 
 type Status struct {
@@ -37,6 +38,7 @@ type Status struct {
 	Files    int64     `json:"files"`
 	Skipped  int64     `json:"skipped"`
 	Findings int       `json:"findings"`
+	Omitted int64 `json:"omitted"`
 	Started  time.Time `json:"started"`
 	Error    string    `json:"error"`
 }
@@ -51,6 +53,7 @@ type App struct {
 	busy       bool
 	files      int64
 	skipped    int64
+	omitted int64
 }
 
 func newApp(v *Vault) *App {
@@ -69,6 +72,7 @@ func (a *App) add(f Finding) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if len(a.findings) >= 3000 {
+		atomic.AddInt64(&a.omitted,1)
 		return
 	}
 	f.ID = newID()
@@ -83,6 +87,7 @@ func (a *App) snapshot() (Status, []Finding) {
 	s := a.status
 	s.Files = atomic.LoadInt64(&a.files)
 	s.Skipped = atomic.LoadInt64(&a.skipped)
+	s.Omitted = atomic.LoadInt64(&a.omitted)
 	fs := make([]Finding, 0, len(a.order))
 	for _, id := range a.order {
 		fs = append(fs, a.findings[id])
@@ -101,6 +106,7 @@ func (a *App) begin(mode string) (context.Context, error) {
 	a.findings = make(map[string]Finding)
 	atomic.StoreInt64(&a.files, 0)
 	atomic.StoreInt64(&a.skipped, 0)
+	atomic.StoreInt64(&a.omitted, 0)
 	a.order = nil
 	a.status = Status{Active: true, Mode: mode, Started: time.Now()}
 	a.cancel = cancel
@@ -340,7 +346,11 @@ func inspectFile(p string, info os.FileInfo) *Finding {
 		add(80, "Disguised double extension (for example document.pdf.exe)")
 	}
 	if windowsSystemNames[base] && !isLegitimateSystemPath(lower) {
-		add(65, "Uses a Windows system-process filename outside a normal system directory")
+		if info.Size() >= 512 && hasPEFileSignature(p) {
+			add(65, "Windows system-process filename outside a system directory (file has PE signature)")
+		} else {
+			add(45, "Resembles a Windows system-process filename outside a system directory; may be a harmless renamed file")
+		}
 	}
 	if startup && (executableExtensions[ext] || scriptExtensions[ext]) {
 		add(55, "Executable or script located in a Windows Startup folder")
@@ -366,7 +376,7 @@ func inspectFile(p string, info os.FileInfo) *Finding {
 		// Do not read all huge files: sample only small file heads.
 		maxRead := int64(4096)
 		if scriptExtensions[ext] {
-			maxRead = 256 * 1024
+			maxRead = 2 * 1024 * 1024
 		}
 		if info.Size() <= 32*1024*1024 && maxRead > info.Size() {
 			maxRead = info.Size()
@@ -378,17 +388,29 @@ func inspectFile(p string, info os.FileInfo) *Finding {
 				if isExactEICAR(buf) && info.Size() == int64(len(buf)) {
 					add(110, "Exact EICAR antivirus test file (harmless standardized test, not malware)")
 				}
-				if scriptExtensions[ext] {
+				if scriptExtensions[ext] || ext == ".txt" || ext == ".7z" {
 					// Check an additional bounded tail sample for appended script commands.
 					if info.Size() > maxRead {
-						const tailLimit int64 = 64 * 1024
+						const tailLimit int64 = 128 * 1024
 						if _, err := fh.Seek(-min(info.Size(), tailLimit), io.SeekEnd); err == nil {
 							tail, _ := io.ReadAll(io.LimitReader(fh, tailLimit))
 							buf = append(buf, '\n')
 							buf = append(buf, tail...)
 						}
 					}
-					inspectScript(buf, &score, &reasons)
+					if scriptExtensions[ext] {
+						inspectScript(buf, &score, &reasons)
+						inspectStage5Patterns(buf, ext, &score, &reasons)
+					} else if ext == ".txt" {
+						var scriptScore int
+						var scriptReasons []string
+						inspectScript(buf, &scriptScore, &scriptReasons)
+						if scriptScore >= 70 {
+							add(45, "Text document contains suspicious script-like text; review, not proof of execution")
+						}
+					} else if ext == ".7z" {
+						inspectMisnamed7z(buf, &score, &reasons)
+					}
 				}
 				if ext == ".lnk" {
 					inspectShortcut(buf, &score, &reasons)
@@ -412,7 +434,17 @@ func inspectFile(p string, info os.FileInfo) *Finding {
 	if score > 150 {
 		score = 150
 	}
-	return &Finding{Path: p, Name: name, Score: score, Severity: severity, Source: "Heuristics", Reasons: reasons, Size: info.Size(), Modified: info.ModTime(), CanQuarantine: true}
+	f:= &Finding{Path: p, Name: name, Score: score, Severity: severity, Source: "Heuristics", Reasons: reasons, Size: info.Size(), Modified: info.ModTime(), CanQuarantine: true}
+	if info.Size()>2*1024*1024*1024 {
+		f.CanQuarantine=false
+		f.Reasons=append(f.Reasons,"Quarantine unavailable: file exceeds 2 GiB limit")
+	} else if hash,err:=fileSHA256(p);err==nil {
+		f.ReviewSHA256=hash
+	} else {
+		f.CanQuarantine=false
+		f.Reasons=append(f.Reasons,"Cannot verify reviewed file: "+err.Error())
+	}
+	return f
 }
 
 func isLegitimateSystemPath(lower string) bool {
@@ -433,7 +465,17 @@ func inspectScript(buf []byte, score *int, reasons *[]string) {
 	if len(buf) == 0 {
 		return
 	}
-	lower := strings.ToLower(stripLineComments(decodeScriptText(buf)))
+	raw := strings.ToLower(decodeScriptText(buf))
+	if !strings.Contains(raw,"powershell") && !strings.Contains(raw,"download") &&
+		!strings.Contains(raw,"invoke-") && !strings.Contains(raw,"frombase64string") &&
+		!strings.Contains(raw,"certutil") && !strings.Contains(raw,"schtasks") &&
+		!strings.Contains(raw,"regwrite") && !strings.Contains(raw,"reg add") &&
+		!strings.Contains(raw,"add-mppreference") && !strings.Contains(raw,"disablerealtimemonitoring") &&
+		!strings.Contains(raw,"bitstransfer") && !strings.Contains(raw,"webclient") &&
+		!strings.Contains(raw,"encodedcommand") && !strings.Contains(raw,"scriptblock]::create") {
+		return
+	}
+	lower := strings.ToLower(codeOnlyForSignals(raw))
 	add := func(n int, desc string) { *score += n; *reasons = append(*reasons, desc) }
 	encoded := strings.Contains(lower, "-encodedcommand") || encodedCommandPattern.MatchString(lower)
 	if encoded {

@@ -216,6 +216,9 @@ func (v *Vault) quarantine(f Finding) (VaultItem, error) {
 	if err != nil {
 		return VaultItem{}, err
 	}
+	if f.ReviewSHA256 != "" && item.SHA256 != f.ReviewSHA256 {
+		return VaultItem{}, errors.New("file content changed since the finding was reviewed; scan it again")
+	}
 	latest, err := os.Lstat(p)
 	if err != nil || !os.SameFile(st, latest) || latest.Size() != st.Size() || !latest.ModTime().Equal(st.ModTime()) {
 		return VaultItem{}, errors.New("file changed during verification")
