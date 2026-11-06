@@ -343,7 +343,7 @@ func (a *App) runHeuristic(ctx context.Context, mode, custom string) error {
                     continue
                 }
                 a.incrFiles()
-                f := inspectFileDetailed(p, info, func(reason string) {
+                f := inspectFileProtected(p, info, func(reason string) {
                     a.recordSkip(p,reason)
                 })
 				if f != nil {
@@ -455,6 +455,14 @@ func inspectFileDetailed(p string, info os.FileInfo, onReadError func(string)) *
 		if stage9InspectableExtension(ext) || stage10InspectableExtension(ext) || stage11InspectableExtension(ext) || stage12InspectableExtension(ext) {
 			maxRead = 512 * 1024
 		}
+        // Keep the Stage 12 advisory checks cheap on large photo/text libraries.
+        // No benefit comes from decoding 512 KiB of every ordinary JPEG.
+        switch ext {
+        case ".jpg", ".jpeg", ".sys", ".iso":
+            maxRead = 4096
+        case ".txt":
+            maxRead = 64 * 1024
+        }
 		if ext==".lnk" { maxRead=128*1024 }
         if info.Size() <= 32*1024*1024 && maxRead > info.Size() {
 			maxRead = info.Size()

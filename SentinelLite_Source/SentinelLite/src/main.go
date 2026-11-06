@@ -39,6 +39,15 @@ func readJSON(r *http.Request, v any) error {
 }
 func (s *Server) secure(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        // Preserve the local API's availability if a single request handler
+        // panics unexpectedly. Go's default HTTP recovery drops the connection
+        // and produces an unhelpful browser NetworkError.
+        defer func() {
+            if incident := recover(); incident != nil {
+                log.Printf("Local API error: %v", panicAsError(incident))
+                http.Error(w, "Internal scanner error; inspect local diagnostics log", http.StatusInternalServerError)
+            }
+        }()
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")
