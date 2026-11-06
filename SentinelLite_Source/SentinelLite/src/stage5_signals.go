@@ -2,6 +2,7 @@ package main
 
 import (
  "bytes"
+ "os"
  "regexp"
  "strings"
 )
@@ -87,4 +88,13 @@ func inspectMisnamed7z(buf []byte, score *int, reasons *[]string) {
   *score += 55
   *reasons = append(*reasons, "Invalid 7z signature with suspicious plaintext (not an extracted archive)")
  }
+}
+
+func hasPEFileSignature(path string) bool {
+ file,err:=os.Open(path)
+ if err!=nil{return false}
+ defer file.Close()
+ var header [1024]byte
+ n,_:=file.Read(header[:])
+ return isPEHeader(header[:n])
 }
