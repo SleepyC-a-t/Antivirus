@@ -326,7 +326,6 @@ var windowsSystemNames = map[string]bool{"svchost.exe": true, "lsass.exe": true,
 var encodedCommandPattern = regexp.MustCompile(`(?i)(?:powershell(?:\.exe)?\s+[^\r\n]{0,120})-(?:encodedcommand|enc|en|e)\s+[a-z0-9+/=]{28,}`)
 var executeScriptPattern = regexp.MustCompile(`(?i)\b(?:iex|invoke-expression)\b`)
 var pipeInterpreterPattern = regexp.MustCompile(`(?i)\b(?:curl(?:\.exe)?|wget(?:\.exe)?)\s+[^\r\n|]{0,500}https?://[^\s|]+[^\r\n]{0,200}\|\s*(?:powershell(?:\.exe)?|pwsh(?:\.exe)?|cmd(?:\.exe)?)\b`)
-var eicar = []byte(`X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*`)
 
 func inspectFile(p string, info os.FileInfo) *Finding {
 	name := filepath.Base(p)
