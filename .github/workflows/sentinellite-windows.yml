@@ -101,3 +101,21 @@ jobs:
           path: ${{ runner.temp }}/SentinelGuard-v3.3.exe
           if-no-files-found: error
           retention-days: 14
+
+  race-validation:
+    name: Race-test scanner status and resource sampling
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: SentinelLite_Source/SentinelLite/src
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: SentinelLite_Source/SentinelLite/src/go.mod
+          cache: false
+      - name: Race detector on concurrent scan telemetry
+        run: go test -race -count=1 -run '^TestStage12(SustainedCustomScanAndConcurrentStatus|ResourceMetricsResetAndReport|CancelledScanStopsTelemetry)$' ./...
