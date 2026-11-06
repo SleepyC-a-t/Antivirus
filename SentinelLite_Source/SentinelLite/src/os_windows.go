@@ -47,7 +47,7 @@ func openWindowsSecurity() error {
 	return exec.Command("explorer.exe", "windowsdefender://threat/").Start()
 }
 func reportStartupError(err string) {
-	title, _ := syscall.UTF16PtrFromString("SentinelLite - error")
+	title, _ := syscall.UTF16PtrFromString("SentinelGuard - error")
 	body, _ := syscall.UTF16PtrFromString(err)
 	messageBox.Call(0, uintptr(unsafe.Pointer(body)), uintptr(unsafe.Pointer(title)), 0x10)
 }
