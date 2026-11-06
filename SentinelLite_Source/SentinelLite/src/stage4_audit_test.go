@@ -15,7 +15,6 @@ import (
  "path/filepath"
  "runtime"
  "sort"
- "strings"
  "testing"
  "time"
 )
