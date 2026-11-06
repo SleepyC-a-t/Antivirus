@@ -6,6 +6,7 @@ import (
  "encoding/binary"
  "io"
  "path/filepath"
+ "regexp"
  "strings"
  "unicode/utf16"
 )
@@ -66,8 +67,8 @@ func inspectArchiveEntries(files []*zip.File,depth int,budget *int64,score *int,
   if doubleExt.MatchString(filepath.Base(file.Name)){
    *score+=65;*reasons=append(*reasons,"Archive contains disguised executable: "+name);return true
   }
-  nested:=depth<1 && isZIPContainer(ext)
-  if !nested && !scriptExtensions[ext] && !isDocumentOrImage(ext){continue}
+  nested:=depth<3 && isZIPContainer(ext)
+  if !nested && !scriptExtensions[ext] && ext!=".lnk" && !isDocumentOrImage(ext){continue}
   if file.CompressedSize64>16*1024*1024 {continue}
   limit:=maxEntryBytes
   if nested {limit=maxNestedBytes}
@@ -81,15 +82,15 @@ func inspectArchiveEntries(files []*zip.File,depth int,budget *int64,score *int,
    if err==nil && inspectArchiveEntries(z.File,depth+1,budget,score,reasons){return true}
    continue
   }
-  if bytes.Contains(buf,eicar){
-   *score+=110;*reasons=append(*reasons,"Archive contains harmless EICAR test signature: "+name);return true
+  if file.UncompressedSize64==uint64(len(buf)) && isExactEICAR(buf){
+   *score+=110;*reasons=append(*reasons,"Archive contains exact harmless EICAR test file: "+name);return true
   }
   if isDocumentOrImage(ext)&&isPEHeader(buf){
    *score+=80;*reasons=append(*reasons,"Archive document/image contains PE header: "+name);return true
   }
-  if scriptExtensions[ext]{
+  if scriptExtensions[ext] || ext==".lnk"{
    partialScore:=0;partialReasons:=[]string{}
-   inspectScript(buf,&partialScore,&partialReasons)
+   if scriptExtensions[ext] {inspectScript(buf,&partialScore,&partialReasons)} else {inspectShortcut(buf,&partialScore,&partialReasons)}
    if partialScore>=40 {
     *score+=partialScore
     for _,r:=range partialReasons{*reasons=append(*reasons,"Archive entry "+name+": "+r)}
@@ -98,4 +99,41 @@ func inspectArchiveEntries(files []*zip.File,depth int,budget *int64,score *int,
   }
  }
  return false
+}
+
+
+// Only match an EICAR test file, not a document that quotes the test string.
+func isExactEICAR(buf []byte) bool {
+ if len(buf)<len(eicar)||len(buf)>128||!bytes.HasPrefix(buf,eicar){return false}
+ for _,b:=range buf[len(eicar):]{
+  switch b {case ' ', '\t', '\n', '\r', 0x1a: default:return false}
+ }
+ return true
+}
+func stripLineComments(source string) string {
+ lines:=strings.Split(source,"\n")
+ var result strings.Builder
+ for _,line:=range lines {
+  trimmed:=strings.TrimSpace(line)
+  lower:=strings.ToLower(trimmed)
+  if strings.HasPrefix(lower,"#")||strings.HasPrefix(lower,"//")||strings.HasPrefix(lower,"rem ")||strings.HasPrefix(lower,"@rem ")||strings.HasPrefix(lower,"::"){continue}
+  result.WriteString(line);result.WriteByte('\n')
+ }
+ return result.String()
+}
+var shortcutEncoded = regexp.MustCompile(`(?i)\bpowershell(?:\.exe)?\s+[^\r\n]{0,100}-(?:encodedcommand|enc|en|e)\s+[a-z0-9+/=]{28,}`)
+func inspectShortcut(data []byte, score *int, reasons *[]string) {
+ source:=strings.ToLower(string(data))
+ if !shortcutEncoded.MatchString(source) && len(data)>4 {
+  var utf16Text strings.Builder
+  for phase:=0;phase<2;phase++ {
+   for i:=phase;i+1<len(data);i+=2 {
+    if data[i+1]==0 && data[i]>=32 && data[i]<127 {utf16Text.WriteByte(data[i])} else {utf16Text.WriteByte(' ')}
+   }
+  }
+  source=utf16Text.String()
+ }
+ if shortcutEncoded.MatchString(source){
+  *score+=78;*reasons=append(*reasons,"Shortcut contains a PowerShell encoded command (review target and arguments)")
+ }
 }
