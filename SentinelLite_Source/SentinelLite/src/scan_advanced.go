@@ -53,9 +53,13 @@ func hasMisleadingBidiControls(name string) bool {
 }
 // No archive entry is executed or extracted to disk; bound both depth and reads.
 func inspectZIP(p string,score *int,reasons *[]string) {
- zr,err:=zip.OpenReader(p);if err!=nil{return};defer zr.Close()
+ _=inspectZIPWithError(p,score,reasons)
+}
+func inspectZIPWithError(p string,score *int,reasons *[]string) error {
+ zr,err:=zip.OpenReader(p);if err!=nil{return err};defer zr.Close()
  budget:=int64(2*1024*1024)
  inspectArchiveEntries(zr.File,0,&budget,score,reasons)
+ return nil
 }
 func inspectArchiveEntries(files []*zip.File,depth int,budget *int64,score *int,reasons *[]string) bool {
  const maxEntries=4096
@@ -70,7 +74,7 @@ func inspectArchiveEntries(files []*zip.File,depth int,budget *int64,score *int,
    *score+=65;*reasons=append(*reasons,"Archive contains disguised executable: "+name);return true
   }
   nested:=depth<3 && isZIPContainer(ext)
-  if !nested && !scriptExtensions[ext] && !isThreatScriptExtension(ext) && ext!=".lnk" && !isDocumentOrImage(ext) && !stage9InspectableExtension(ext) && !stage10InspectableExtension(ext){continue}
+  if !nested && !scriptExtensions[ext] && !isThreatScriptExtension(ext) && ext!=".lnk" && !isDocumentOrImage(ext) && !stage9InspectableExtension(ext) && !stage10InspectableExtension(ext) && !stage11InspectableExtension(ext){continue}
   if file.CompressedSize64>16*1024*1024 {continue}
   limit:=maxEntryBytes
   if nested {limit=maxNestedBytes}
@@ -113,6 +117,9 @@ func inspectArchiveEntries(files []*zip.File,depth int,budget *int64,score *int,
    }
    if isThreatScriptExtension(ext) {
     inspectThreatBehavior(buf,ext,&entryScore,&entryReasons)
+   }
+   if stage11InspectableExtension(ext) || isThreatScriptExtension(ext) || ext==".html" || ext==".htm" {
+    inspectStage11Content(filepath.Base(file.Name),ext,buf,&entryScore,&entryReasons)
    }
    if entryScore>=40 {
     *score+=entryScore
