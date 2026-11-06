@@ -368,7 +368,7 @@ func inspectFile(p string, info os.FileInfo) *Finding {
 		add(22, "Executable or library within roaming application data (can be legitimate)")
 	}
 
-	inspectContent := isThreatScriptExtension(ext) || ext==".html" || ext==".htm" || ext==".sys" || scriptExtensions[ext] || executableExtensions[ext] || isDocumentOrImage(ext) || ext == ".lnk" || isZIPContainer(ext) || riskExtensions[ext] || score > 0
+	inspectContent := isThreatScriptExtension(ext) || ext==".html" || ext==".htm" || ext==".sys" || scriptExtensions[ext] || executableExtensions[ext] || isDocumentOrImage(ext) || ext == ".lnk" || isZIPContainer(ext) || riskExtensions[ext] || stage9InspectableExtension(ext) || score > 0
 	if inspectContent {
 		if isZIPContainer(ext) && info.Size() <= 64*1024*1024 {
 			inspectZIP(p, &score, &reasons)
@@ -377,6 +377,9 @@ func inspectFile(p string, info os.FileInfo) *Finding {
 		maxRead := int64(4096)
 		if isThreatScriptExtension(ext) || ext==".html" || ext==".htm" {
 			maxRead = 2 * 1024 * 1024
+		}
+		if stage9InspectableExtension(ext) {
+			maxRead = 512 * 1024
 		}
 		if info.Size() <= 32*1024*1024 && maxRead > info.Size() {
 			maxRead = info.Size()
@@ -424,6 +427,7 @@ func inspectFile(p string, info os.FileInfo) *Finding {
 					add(80, "Valid PE executable header disguised as a document or image")
 				}
 				inspectPEFileMetadata(buf, ext, &score, &reasons)
+				inspectStage9Content(name, ext, buf, &score, &reasons)
 				_ = fh.Close()
 			}
 		}
