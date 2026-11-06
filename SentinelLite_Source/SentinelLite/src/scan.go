@@ -345,7 +345,7 @@ func inspectFile(p string, info os.FileInfo) *Finding {
 	if doubleExt.MatchString(name) {
 		add(80, "Disguised double extension (for example document.pdf.exe)")
 	}
-	if windowsSystemNames[base] && !isLegitimateSystemPath(lower) {
+	if windowsSystemNames[base] && !isLegitimateSystemPath(lower) && !isWindowsComponentStorePath(lower) {
 		if info.Size() >= 512 && hasPEFileSignature(p) {
 			add(65, "Windows system-process filename outside a system directory (file has PE signature)")
 		} else {
@@ -451,6 +451,17 @@ func inspectFile(p string, info os.FileInfo) *Finding {
 		f.Reasons=append(f.Reasons,"Cannot verify reviewed file: "+err.Error())
 	}
 	return f
+}
+
+// WinSxS is the legitimate Windows component store. System processes
+// regularly appear here as servicing and rollback payloads. Filename-based
+// impersonation rules must not flag those copies merely for their location.
+// Do not broadly trust application directories: inspect content as usual.
+func isWindowsComponentStorePath(lower string) bool {
+	windir:=strings.ToLower(filepath.Clean(os.Getenv("WINDIR")))
+	if windir=="." {windir=`c:\windows`}
+	clean:=strings.ToLower(filepath.Clean(lower))
+	return strings.HasPrefix(clean,strings.ToLower(filepath.Join(windir,"winsxs"))+string(os.PathSeparator))
 }
 
 func isLegitimateSystemPath(lower string) bool {
