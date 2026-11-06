@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+    "strings"
 	"sync/atomic"
 	"time"
 )
@@ -19,7 +20,12 @@ import (
 //go:embed ui.html
 var pages embed.FS
 
+// Built separately with -ldflags '-X main.edition=active'. The standard
+// SentinelGuard executable retains its existing on-demand behavior.
+var edition = "standard"
+
 type Server struct {
+    active *ActiveMonitor
 	app     *App
 	token   string
 	address string
@@ -67,9 +73,17 @@ func (s *Server) secure(next http.Handler) http.Handler {
 			return
 		}
 		if o := r.Header.Get("Origin"); o != "" && o != "http://"+s.address {
-			http.Error(w, "invalid origin", 403)
-			return
-		}
+            allowExtension := edition=="active" && r.URL.Path=="/api/active/extension-status" &&
+                (strings.HasPrefix(o,"moz-extension://") || strings.HasPrefix(o,"chrome-extension://"))
+            if !allowExtension {
+                http.Error(w,"invalid origin",403);return
+            }
+            w.Header().Set("Access-Control-Allow-Origin",o)
+            w.Header().Set("Vary","Origin")
+            w.Header().Set("Access-Control-Allow-Headers","X-Sentinel-Token")
+            w.Header().Set("Access-Control-Allow-Methods","GET, OPTIONS")
+            if r.Method == http.MethodOptions {w.WriteHeader(http.StatusNoContent);return}
+        }
 		t := r.Header.Get("X-Sentinel-Token")
 		if r.Method == http.MethodGet && t == "" {
 			t = r.URL.Query().Get("token")
@@ -105,7 +119,7 @@ func (s *Server) routes() http.Handler {
 	})
 	mux.HandleFunc("/api/snapshot", func(w http.ResponseWriter, r *http.Request) {
 		status, fs := s.app.snapshot()
-		sendJSON(w, map[string]any{"status": status, "findings": fs, "product": map[string]string{"name": "SentinelGuard", "version": "3.3", "type": "advisory static scanner"}})
+		sendJSON(w, map[string]any{"status": status, "findings": fs, "product": map[string]any{"name":map[bool]string{true:"SentinelGuard Active",false:"SentinelGuard"}[edition=="active"],"version":"3.3-active-preview", "type":"advisory static scanner","activeEdition":edition=="active"}})
 	})
 	mux.HandleFunc("/api/choose-folder", func(w http.ResponseWriter, r *http.Request) {
         if !requirePost(w, r) { return }
@@ -385,6 +399,7 @@ func (s *Server) routes() http.Handler {
 		sendJSON(w, map[string]any{"ok": true})
 		go func() { time.Sleep(200 * time.Millisecond); os.Exit(0) }()
 	})
+	registerActiveRoutes(mux,s)
 	return s.secure(mux)
 }
 
@@ -407,6 +422,10 @@ func main() {
 		log.Fatal(err)
 	}
 	server := &Server{app: newApp(vault), token: token, address: listener.Addr().String()}
+    if edition=="active" {
+        server.active=newActiveMonitor(vault)
+        server.active.start()
+    }
 	url := "http://" + server.address + "/app/?token=" + token
 	httpSrv := &http.Server{Handler: server.routes(), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 35 * time.Second, MaxHeaderBytes: 8192}
 	go func() {
