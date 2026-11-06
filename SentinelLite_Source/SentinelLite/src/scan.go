@@ -368,14 +368,14 @@ func inspectFile(p string, info os.FileInfo) *Finding {
 		add(22, "Executable or library within roaming application data (can be legitimate)")
 	}
 
-	inspectContent := scriptExtensions[ext] || executableExtensions[ext] || isDocumentOrImage(ext) || ext == ".lnk" || isZIPContainer(ext) || riskExtensions[ext] || score > 0
+	inspectContent := isThreatScriptExtension(ext) || ext==".html" || ext==".htm" || ext==".sys" || scriptExtensions[ext] || executableExtensions[ext] || isDocumentOrImage(ext) || ext == ".lnk" || isZIPContainer(ext) || riskExtensions[ext] || score > 0
 	if inspectContent {
 		if isZIPContainer(ext) && info.Size() <= 64*1024*1024 {
 			inspectZIP(p, &score, &reasons)
 		}
 		// Do not read all huge files: sample only small file heads.
 		maxRead := int64(4096)
-		if scriptExtensions[ext] {
+		if isThreatScriptExtension(ext) || ext==".html" || ext==".htm" {
 			maxRead = 2 * 1024 * 1024
 		}
 		if info.Size() <= 32*1024*1024 && maxRead > info.Size() {
@@ -388,7 +388,7 @@ func inspectFile(p string, info os.FileInfo) *Finding {
 				if isExactEICAR(buf) && info.Size() == int64(len(buf)) {
 					add(110, "Exact EICAR antivirus test file (harmless standardized test, not malware)")
 				}
-				if scriptExtensions[ext] || ext == ".txt" || ext == ".7z" {
+				if isThreatScriptExtension(ext) || ext==".html" || ext==".htm" || ext == ".txt" || ext == ".7z" || ext==".rar" {
 					// Check an additional bounded tail sample for appended script commands.
 					if info.Size() > maxRead {
 						const tailLimit int64 = 128 * 1024
@@ -398,26 +398,32 @@ func inspectFile(p string, info os.FileInfo) *Finding {
 							buf = append(buf, tail...)
 						}
 					}
-					if scriptExtensions[ext] {
-						inspectScript(buf, &score, &reasons)
-						inspectStage5Patterns(buf, ext, &score, &reasons)
+					if isThreatScriptExtension(ext) || ext==".html" || ext==".htm" {
+						if scriptExtensions[ext] {inspectScript(buf, &score, &reasons);inspectStage5Patterns(buf, ext, &score, &reasons)}
+						inspectThreatBehavior(buf, ext, &score, &reasons)
 					} else if ext == ".txt" {
 						var scriptScore int
 						var scriptReasons []string
 						inspectScript(buf, &scriptScore, &scriptReasons)
-						if scriptScore >= 70 {
+						lowerText:=strings.ToLower(strings.TrimSpace(decodeScriptText(buf)))
+						isDocumentation:=strings.HasPrefix(lowerText,"documentation:") || strings.HasPrefix(lowerText,"example:") || strings.HasPrefix(lowerText,"guide:")
+						if scriptScore >= 70 && !isDocumentation {
 							add(45, "Text document contains suspicious script-like text; review, not proof of execution")
 						}
+						inspectRansomNote(name,buf,&score,&reasons)
 					} else if ext == ".7z" {
 						inspectMisnamed7z(buf, &score, &reasons)
+					} else if ext == ".rar" {
+						inspectMisnamedRAR(buf, &score, &reasons)
 					}
 				}
 				if ext == ".lnk" {
-					inspectShortcut(buf, &score, &reasons)
+					inspectValidatedShortcut(buf, &score, &reasons)
 				}
 				if isDocumentOrImage(ext) && isPEHeader(buf) {
 					add(80, "Valid PE executable header disguised as a document or image")
 				}
+				inspectPEFileMetadata(buf, ext, &score, &reasons)
 				_ = fh.Close()
 			}
 		}
