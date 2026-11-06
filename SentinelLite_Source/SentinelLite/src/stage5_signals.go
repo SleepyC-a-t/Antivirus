@@ -65,7 +65,9 @@ var htaRemotePattern = regexp.MustCompile(`(?i)\bmshta(?:\.exe)?\s+https?://[^\s
 var jsRemoteEvalPattern = regexp.MustCompile(`(?i)\beval\s*\(\s*(?:await\s+)?fetch\s*\(`)
 
 func inspectStage5Patterns(buf []byte, ext string, score *int, reasons *[]string) {
- lower := strings.ToLower(codeOnlyForSignals(decodeScriptText(buf)))
+ raw := strings.ToLower(decodeScriptText(buf))
+ if !strings.Contains(raw,"mshta") && !(strings.Contains(raw,"eval") && strings.Contains(raw,"fetch")) { return }
+ lower := strings.ToLower(codeOnlyForSignals(raw))
  if (ext == ".bat" || ext == ".cmd" || ext == ".ps1" || ext == ".hta") && htaRemotePattern.MatchString(lower) {
   *score += 70
   *reasons = append(*reasons, "Uses mshta to open a remote script/document (manual review recommended)")
