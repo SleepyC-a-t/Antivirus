@@ -70,7 +70,7 @@ func inspectArchiveEntries(files []*zip.File,depth int,budget *int64,score *int,
    *score+=65;*reasons=append(*reasons,"Archive contains disguised executable: "+name);return true
   }
   nested:=depth<3 && isZIPContainer(ext)
-  if !nested && !scriptExtensions[ext] && ext!=".lnk" && !isDocumentOrImage(ext){continue}
+  if !nested && !scriptExtensions[ext] && !isThreatScriptExtension(ext) && ext!=".lnk" && !isDocumentOrImage(ext) && !stage9InspectableExtension(ext) && !stage10InspectableExtension(ext){continue}
   if file.CompressedSize64>16*1024*1024 {continue}
   limit:=maxEntryBytes
   if nested {limit=maxNestedBytes}
@@ -96,6 +96,29 @@ func inspectArchiveEntries(files []*zip.File,depth int,budget *int64,score *int,
    if partialScore>=40 {
     *score+=partialScore
     for _,r:=range partialReasons{*reasons=append(*reasons,"Archive entry "+name+": "+r)}
+    return true
+   }
+  }
+  // Inspect additional high-confidence patterns in fully read archive entries.
+  // Do not turn a truncated JSON/XML/script sample into a misleading verdict.
+  // The archive budget and nesting limits above apply to all these checks.
+  if file.UncompressedSize64==uint64(len(buf)) {
+   entryScore:=0
+   entryReasons:=[]string{}
+   if stage9InspectableExtension(ext) || isThreatScriptExtension(ext) || isDocumentOrImage(ext) {
+    inspectStage9Content(filepath.Base(file.Name),ext,buf,&entryScore,&entryReasons)
+   }
+   if stage10InspectableExtension(ext) {
+    inspectStage10Content(filepath.Base(file.Name),ext,buf,&entryScore,&entryReasons)
+   }
+   if isThreatScriptExtension(ext) {
+    inspectThreatBehavior(buf,ext,&entryScore,&entryReasons)
+   }
+   if entryScore>=40 {
+    *score+=entryScore
+    for _,reason:=range entryReasons {
+     *reasons=append(*reasons,"Archive entry "+name+": "+reason)
+    }
     return true
    }
   }
