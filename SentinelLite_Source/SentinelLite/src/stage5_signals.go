@@ -43,7 +43,7 @@ func codeOnlyForSignals(src string) string {
   }
   if atLineStart {
    if c == ' ' || c == '\t' { out.WriteByte(c); i++; continue }
-   rest := strings.ToLower(src[i:])
+   rest := strings.ToLower(src[i:min(i+12,len(src))])
    if strings.HasPrefix(rest, "#") || strings.HasPrefix(rest, "//") || strings.HasPrefix(rest, "::") ||
     strings.HasPrefix(rest, "rem ") || strings.HasPrefix(rest, "@rem ") ||
     strings.HasPrefix(rest, "echo ") || strings.HasPrefix(rest, "@echo ") {
