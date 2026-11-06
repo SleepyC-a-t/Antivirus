@@ -26,11 +26,11 @@ var iidFileOpenDialog = syscall.GUID{
 
 // Vtable indexes are zero-based, with the three IUnknown methods first.
 // Windows IFileOpenDialog inherits IModalWindow and IFileDialog.
-func callFolderCOM(obj uintptr, method uintptr, args ...uintptr) uintptr {
-    vtable := *(*uintptr)(unsafe.Pointer(obj))
-    fn := *(*uintptr)(unsafe.Pointer(vtable + method*unsafe.Sizeof(uintptr(0))))
+func callFolderCOM(obj unsafe.Pointer, method uintptr, args ...uintptr) uintptr {
+    vtable := *(*unsafe.Pointer)(obj)
+    fn := *(*uintptr)(unsafe.Add(vtable, method*unsafe.Sizeof(uintptr(0))))
     params := make([]uintptr, 0, 1+len(args))
-    params = append(params, obj)
+    params = append(params, uintptr(obj))
     params = append(params, args...)
     result, _, _ := syscall.SyscallN(fn, params...)
     return result
@@ -55,7 +55,7 @@ func chooseScanFolder() (string, error) {
     }
     defer fileDialogCoUninitialize.Call()
 
-    var dialog uintptr
+    var dialog unsafe.Pointer
     const clsctxInprocServer = 0x1
     hr, _, _ := fileDialogCoCreateInstance.Call(
         uintptr(unsafe.Pointer(&classFileOpenDialog)), 0, clsctxInprocServer,
@@ -64,7 +64,7 @@ func chooseScanFolder() (string, error) {
     if err := folderHRESULT(hr, "Create Windows folder picker"); err != nil {
         return "", err
     }
-    if dialog == 0 { return "", fmt.Errorf("Windows folder picker returned no dialog") }
+    if dialog == nil { return "", fmt.Errorf("Windows folder picker returned no dialog") }
     defer callFolderCOM(dialog, 2) // IUnknown.Release
 
     var opts uint32
@@ -97,26 +97,26 @@ func chooseScanFolder() (string, error) {
     if err := folderHRESULT(hr, "Show folder picker"); err != nil {
         return "", err
     }
-    var item uintptr
+    var item unsafe.Pointer
     if err := folderHRESULT(callFolderCOM(dialog, 20, uintptr(unsafe.Pointer(&item))), "Read selected folder"); err != nil {
         return "", err
     }
-    if item == 0 { return "", fmt.Errorf("Windows folder picker returned no selection") }
+    if item == nil { return "", fmt.Errorf("Windows folder picker returned no selection") }
     defer callFolderCOM(item, 2) // IShellItem.Release
 
-    var stringPtr uintptr
+    var stringPtr *uint16
     const sigdnFileSystemPath = 0x80058000
     if err := folderHRESULT(callFolderCOM(item, 5, sigdnFileSystemPath, uintptr(unsafe.Pointer(&stringPtr))), "Resolve selected folder path"); err != nil {
         return "", err
     }
-    if stringPtr == 0 { return "", fmt.Errorf("Windows folder picker returned an empty path") }
-    defer fileDialogCoTaskMemFree.Call(stringPtr)
+    if stringPtr == nil { return "", fmt.Errorf("Windows folder picker returned an empty path") }
+    defer fileDialogCoTaskMemFree.Call(uintptr(unsafe.Pointer(stringPtr)))
     // The standard syscall package exposes UTF16ToString (not the
     // x/sys/windows UTF16PtrToString helper). Read the COM-allocated,
     // NUL-terminated UTF-16 buffer with an explicit length ceiling.
     units := make([]uint16, 0, 260)
     for i := uintptr(0); i < 32768; i++ {
-        value := *(*uint16)(unsafe.Pointer(stringPtr + i*2))
+        value := *(*uint16)(unsafe.Add(unsafe.Pointer(stringPtr), i*2))
         if value == 0 { return syscall.UTF16ToString(units), nil }
         units = append(units, value)
     }
