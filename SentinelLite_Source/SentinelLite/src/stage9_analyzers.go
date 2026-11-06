@@ -40,6 +40,14 @@ type stage9Task struct {
 	} `xml:"Actions"`
 }
 
+func stage9InspectableExtension(ext string) bool {
+	switch ext {
+	case ".xml", ".reg", ".json", ".c", ".cpp", ".bas":
+		return true
+	}
+	return false
+}
+
 func stage9HasUserWritableTarget(target string) bool {
 	target = strings.ToLower(strings.ReplaceAll(target, "/", "\\"))
 	return strings.Contains(target, "\\users\\public\\") ||
