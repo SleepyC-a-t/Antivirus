@@ -465,7 +465,17 @@ func inspectScript(buf []byte, score *int, reasons *[]string) {
 	if len(buf) == 0 {
 		return
 	}
-	lower := strings.ToLower(codeOnlyForSignals(decodeScriptText(buf)))
+	raw := strings.ToLower(decodeScriptText(buf))
+	if !strings.Contains(raw,"powershell") && !strings.Contains(raw,"download") &&
+		!strings.Contains(raw,"invoke-") && !strings.Contains(raw,"frombase64string") &&
+		!strings.Contains(raw,"certutil") && !strings.Contains(raw,"schtasks") &&
+		!strings.Contains(raw,"regwrite") && !strings.Contains(raw,"reg add") &&
+		!strings.Contains(raw,"add-mppreference") && !strings.Contains(raw,"disablerealtimemonitoring") &&
+		!strings.Contains(raw,"bitstransfer") && !strings.Contains(raw,"webclient") &&
+		!strings.Contains(raw,"encodedcommand") && !strings.Contains(raw,"scriptblock]::create") {
+		return
+	}
+	lower := strings.ToLower(codeOnlyForSignals(raw))
 	add := func(n int, desc string) { *score += n; *reasons = append(*reasons, desc) }
 	encoded := strings.Contains(lower, "-encodedcommand") || encodedCommandPattern.MatchString(lower)
 	if encoded {
