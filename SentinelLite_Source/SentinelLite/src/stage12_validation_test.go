@@ -181,7 +181,7 @@ func TestStage12UIResourcePanelAndReconnectNotice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, s := range []string{"cpuCurrent", "cpuAverage", "cpuPeak", "memoryCurrent", "memoryAverage", "memoryPeak", "connectionLosses", "last known readings", "v4.1"} {
+	for _, s := range []string{"cpuCurrent", "cpuAverage", "cpuPeak", "memoryCurrent", "memoryAverage", "memoryPeak", "connectionLosses", "last known readings", "SentinelGuard 4.2"} {
 		if !strings.Contains(string(html), s) {
 			t.Errorf("missing UI element/notice %q", s)
 		}
