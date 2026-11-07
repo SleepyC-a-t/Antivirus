@@ -18,7 +18,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: sentinelguard-v41-${{ github.ref }}
+  group: sentinelguard-v42-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -49,8 +49,16 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Go dependency verification failed' }
       - name: Static analysis
         run: go vet ./...
-      - name: Run all synthetic detector and active-mode tests
-        run: go test -count=1 -v ./...
+      - name: Run all synthetic detector, active and independent-benign tests
+        run: |
+          $log=Join-Path $env:RUNNER_TEMP 'v42-all-tests.log'
+          go test -count=1 -v ./... 2>&1 | Tee-Object -FilePath $log
+          if ($LASTEXITCODE -ne 0) { throw 'One or more SentinelGuard regression / safety tests failed' }
+      - name: Generate validation summary from actual test logs
+        working-directory: .
+        run: |
+          python scripts/v42_ci_summary.py (Join-Path $env:RUNNER_TEMP 'v42-all-tests.log') (Join-Path $env:RUNNER_TEMP 'v42-ci-summary.md')
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot generate accurate CI evidence summary' }
       - name: Build desktop Windows executable
         run: |
           $exe = Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.2.exe'
@@ -105,13 +113,25 @@ jobs:
           Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'Active_Edition/browser-extension') (Join-Path $package 'browser-extension') -Recurse
           Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'Active_Edition/browser-extension-firefox') (Join-Path $package 'browser-extension-firefox') -Recurse
           Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'Active_Edition/README.md') (Join-Path $package 'README.txt')
+          Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'docs/COVERAGE_MATRIX_v4.2.md') (Join-Path $package 'COVERAGE_MATRIX.md')
+          Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'docs/ISOLATED_STATIC_LAB_RUNBOOK.md') (Join-Path $package 'STATIC_LAB_RUNBOOK.md')
+          Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'docs/RELEASE_SIGNING_AND_PROVENANCE.md') (Join-Path $package 'SIGNING_AND_PROVENANCE.md')
+          Copy-Item (Join-Path $env:RUNNER_TEMP 'v42-ci-summary.md') (Join-Path $package 'CI_VALIDATION_SUMMARY.md')
+          $exe=Join-Path $package 'SentinelGuard-4.2.exe'
+          $digest=(Get-FileHash -Algorithm SHA256 $exe).Hash.ToLowerInvariant()
+          "$digest  SentinelGuard-4.2.exe" | Set-Content -Encoding ascii (Join-Path $package 'SHA256SUMS.txt')
+          Write-Host "CI_UNSIGNED_EXE_SHA256=$digest"
       - name: Publish verified v4 Windows build
         uses: actions/upload-artifact@v4
         with:
-          name: SentinelGuard-4.2-Windows-Tested
+          name: SentinelGuard-4.2-Windows-CI-Build
           path: ${{ runner.temp }}/SentinelGuard-4.2/
           if-no-files-found: error
           retention-days: 14
+      - name: Catch contradictory README/extension versions
+        working-directory: .
+        run: |
+          python -c "import pathlib,json; r=pathlib.Path('Active_Edition/README.md').read_text().lower(); assert 'pairing must be renewed' not in r; a=json.loads(pathlib.Path('Active_Edition/browser-extension/manifest.json').read_text());b=json.loads(pathlib.Path('Active_Edition/browser-extension-firefox/manifest.json').read_text()); assert a['version']==b['version']=='4.2.0'; assert '4.2' in pathlib.Path('SentinelLite_Source/SentinelLite/src/ui.html').read_text()"
       - name: Publish resolved Go module checksums for source reproducibility
         uses: actions/upload-artifact@v4
         with:
