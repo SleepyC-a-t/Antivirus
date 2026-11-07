@@ -4,7 +4,7 @@
 const ext = typeof browser !== "undefined" ? browser : chrome;
 const FEED = "https://openphish.com/feed.txt";
 const SYNC_ALARM = "sentinel-active-sync";
-const MAX_RULES = 1200;
+const MAX_RULES = 1200; // safe dynamic urlFilter rules, no regex quota
 const MAX_FEED_AGE_MS = 12 * 60 * 60 * 1000;
 
 async function stored() { return await ext.storage.local.get(["pair","useFeed","cachedURLs","lastFeedAt","status"]); }
@@ -15,37 +15,59 @@ async function removeAllRules() {
   const existing = await ext.declarativeNetRequest.getDynamicRules();
   if(existing.length) await ext.declarativeNetRequest.updateDynamicRules({removeRuleIds:existing.map(r=>r.id)});
 }
-function escapeRegExp(value) {
-  const special = ".+*?^$()[]{}|\\";
-  let result="";
-  for(const character of value){result+=special.includes(character)?"\\"+character:character;}
-  return result;
-}
+// URL filters avoid Chrome's 1,000-regex-rule limit. Exact URL rules
+// cannot be bypassed by adding a query to a feed URL that had no query.
+// We deliberately do not block entire domains based on a single reported URL.
 function safePhishingURLs(feedText) {
-  const urls=[];
-  const seen=new Set();
-  for(const candidate of feedText.split(/\r?\n/)){
-    if(urls.length>=MAX_RULES) break;
+  const urls=[], seen=new Set();
+  for (const candidate of feedText.split(/\r?\n/)) {
+    if (urls.length >= MAX_RULES) break;
     const line=candidate.trim();
-    if(!line || line.length>1000 || line.startsWith("#")) continue;
-    try{
+    if (!line || line.length > 800 || line.startsWith("#")) continue;
+    try {
       const u=new URL(line);
-      if((u.protocol!=="http:"&&u.protocol!=="https:")||u.username||u.password)continue;
-      if(!u.hostname || u.hostname==="localhost" || u.hostname==="127.0.0.1" || u.hostname.endsWith(".invalid"))continue;
-      // Fragments are not transmitted over the network.
-      const canonical=u.href.split("#")[0];
-      if(seen.has(canonical))continue;
+      if (!["http:","https:"].includes(u.protocol) || u.username || u.password) continue;
+      if (!u.hostname || u.hostname==="localhost" || u.hostname==="127.0.0.1" ||
+          u.hostname==="::1" || u.hostname.endsWith(".invalid")) continue;
+      u.hash="";
+      const canonical=u.href;
+      // DNR urlFilter treats these symbols as wildcard/anchor characters.
+      // Don't silently turn a literal URL into a broad blocking pattern.
+      if (/[|*^]/.test(canonical) || /[^\x20-\x7e]/.test(canonical)) continue;
+      if (seen.has(canonical))continue;
       seen.add(canonical);urls.push(canonical);
     }catch{}
   }
   return urls;
 }
 function toRules(urls) {
-  return urls.slice(0,MAX_RULES).map((url,index)=>({
-    id:1000+index,priority:1,action:{type:"block"},
-    condition:{regexFilter:"^"+escapeRegExp(url)+"$",isUrlFilterCaseSensitive:false,
-      resourceTypes:["main_frame","sub_frame"]}
-  }));
+  const out=[];
+  let id=1000;
+  for (const original of urls.slice(0,MAX_RULES)) {
+    let u;
+    try{u=new URL(original)}catch{continue}
+    if (u.protocol!=="http:"&&u.protocol!=="https:")continue;
+    const canonical=u.href.split("#")[0];
+    if (/[|*^]/.test(canonical) || /[^\x20-\x7e]/.test(canonical)) continue;
+    out.push({
+      id:id++, priority:1, action:{type:"block"},
+      condition:{urlFilter:"|"+canonical+"|",isUrlFilterCaseSensitive:false,
+                 resourceTypes:["main_frame","sub_frame"]}
+    });
+    // Preserve the exact path boundary. This blocks added query parameters
+    // without matching unrelated sibling paths (e.g. /payment vs /payments).
+    if (!u.search && out.length < MAX_RULES*2) {
+      out.push({
+        id:id++,priority:1,action:{type:"block"},
+        condition:{urlFilter:"|"+canonical+"?",isUrlFilterCaseSensitive:false,
+                   resourceTypes:["main_frame","sub_frame"]}
+      });
+    }
+  }
+  return out;
+}
+function ruleSignature(rule) {
+  return rule.id+"|"+(rule.condition?.urlFilter||"")+"|"+(rule.action?.type||"");
 }
 async function fetchFeed() {
   const controller=new AbortController();
@@ -107,16 +129,28 @@ async function syncProtection() {
     const desired=toRules(urls);
     const current=await ext.declarativeNetRequest.getDynamicRules();
     // Avoid updating the persistent dynamic rules every alarm.
-    if(current.length!==desired.length ||
-       current.some((rule,i)=>rule.condition.regexFilter!==desired[i]?.condition.regexFilter)){
-      await ext.declarativeNetRequest.updateDynamicRules({
-        removeRuleIds:current.map(r=>r.id),addRules:desired
-      });
+    if (current.length!==desired.length ||
+        current.map(ruleSignature).sort().join("\n")!==desired.map(ruleSignature).sort().join("\n")){
+      try {
+        // One transaction: if the new list is invalid, preserve the last
+        // working blocklist instead of clearing it on an update error.
+        await ext.declarativeNetRequest.updateDynamicRules({
+          removeRuleIds:current.map(r=>r.id), addRules:desired
+        });
+      } catch(error) {
+        await setStatus("Rule update failed — previous blocking rules retained: "+
+          String(error.message||error),current.length>0,current.length);
+        return;
+      }
     }
-    await setStatus("Blocking known phishing URLs (exact matches)",true,desired.length);
+    await setStatus("Blocking known phishing URLs (exact and safe query variants)",true,desired.length);
   })().catch(async error=>{
-    await removeAllRules().catch(()=>{});
-    await setStatus("Protection error: "+String(error.message||error),false,0);
+    // Don't disable prior rules for transient feed/storage/browser errors
+    // while the app is ON. The user must see an accurate degraded state.
+    let current=[];
+    try{current=await ext.declarativeNetRequest.getDynamicRules()}catch{}
+    await setStatus("Protection degraded: "+String(error.message||error),
+      current.length>0,current.length);
   }).finally(()=>{running=null});
   return running;
 }
@@ -131,3 +165,6 @@ ext.runtime.onMessage.addListener(message=>{
   if(message?.type==="sync"){return syncProtection().then(()=>({ok:true}));}
 });
 init();
+
+// Pure helpers are exposed only to Node's development test runner.
+if (typeof module!=="undefined" && module.exports) {module.exports={safePhishingURLs,toRules,ruleSignature,syncProtection};}
