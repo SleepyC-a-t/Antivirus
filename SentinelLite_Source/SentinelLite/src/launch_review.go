@@ -32,6 +32,12 @@ type LaunchReview struct {
     Reasons []string `json:"reasons"`
     ExpiresAt time.Time `json:"expiresAt"`
     Warning string `json:"warning"`
+    SHA256 string `json:"sha256"`
+    Size int64 `json:"size"`
+    SignatureStatus string `json:"signatureStatus"`
+    Publisher string `json:"publisher"`
+    Zone string `json:"zone"`
+    Inspection string `json:"inspection"`
 }
 func reviewedExecutable(path string)(string,os.FileInfo,error){
     p,err:=filepath.Abs(filepath.Clean(path))
@@ -69,9 +75,19 @@ func (s *Server) beginLaunchReview(path string)(LaunchReview,error){
         return LaunchReview{},err
     }
     digest,err:=digestExecutable(clean);if err!=nil{return LaunchReview{},err}
-    f:=inspectFileProtected(clean,st,nil)
-    result:=LaunchReview{Path:clean,Score:0,Severity:"No finding",ExpiresAt:time.Now().Add(90*time.Second),
-        Warning:"Static scanning cannot prove a program safe. This optional approval applies only to programs you launch using this button, not programs started elsewhere."}
+    issues:=[]string{}
+    f:=inspectFileProtected(clean,st,func(reason string){issues=append(issues,reason)})
+    if len(issues)>0 {
+        s.active.recordLaunchWithHash(clean,"launch-refused","File could not be fully inspected: "+strings.Join(issues,"; "),0,digest)
+        return LaunchReview{},errors.New("file inspection incomplete: "+strings.Join(issues,"; "))
+    }
+    zone,zoneErr:=executableZone(clean)
+    if zoneErr!=nil {zone="Unknown (Zone.Identifier read error)"}
+    signature,publisher:=verifiedSignatureStatus(clean)
+    result:=LaunchReview{Path:clean,Score:0,Severity:"No indicators found by SentinelGuard",Inspection:"Inspected (bounded static heuristics only)",
+        SHA256:digest,Size:st.Size(),Zone:zone,SignatureStatus:signature,Publisher:publisher,
+        ExpiresAt:time.Now().Add(90*time.Second),
+        Warning:"No indicators is NOT a safety verdict. Windows may show separate SmartScreen / Attachment Manager warnings. No automatic elevation. This only applies to launches started through SentinelGuard."}
     if f!=nil {result.Score=f.Score;result.Severity=f.Severity;result.Reasons=append([]string{},f.Reasons...)}
     secret:=make([]byte,24)
     if _,err:=rand.Read(secret);err!=nil{return LaunchReview{},err}
@@ -86,7 +102,7 @@ func (s *Server) beginLaunchReview(path string)(LaunchReview,error){
     }
     s.launchTickets[result.Ticket]=launchTicket{Path:clean,Digest:digest,Size:st.Size(),Expires:result.ExpiresAt,Score:result.Score}
     s.launchMu.Unlock()
-    s.active.recordLaunch(clean,"launch-reviewed","SHA-256 checked; approval required before SentinelGuard starts this program",result.Score)
+    s.active.recordLaunchWithHash(clean,"launch-reviewed","SHA-256 checked; approval required before SentinelGuard starts this program",result.Score,digest)
     return result,nil
 }
 func (s *Server) decideLaunch(ticket string,approve bool)error{
@@ -113,19 +129,21 @@ func (s *Server) decideLaunch(ticket string,approve bool)error{
         s.active.recordLaunch(entry.Path,"launch-denied","File size/path changed after review",entry.Score)
         return errors.New("executable changed since review; scan again")
     }
-    digest,err:=digestExecutable(entry.Path)
-    if err!=nil||subtle.ConstantTimeCompare([]byte(digest),[]byte(entry.Digest))!=1{
-        s.active.recordLaunch(entry.Path,"launch-denied","SHA-256 changed since review",entry.Score)
-        return errors.New("executable changed since review; scan again")
-    }
-    launcher:=s.launchRunner
-    if launcher==nil{launcher=launchReviewedExecutable}
-    if err:=launcher(entry.Path);err!=nil{
-        s.active.recordLaunch(entry.Path,"launch-failed",fmt.Sprintf("Windows refused to start executable: %v",err),entry.Score)
-        return err
-    }
-    s.active.recordLaunch(entry.Path,"launch-approved","User explicitly approved Scan & Run after static inspection",entry.Score)
-    return nil
+    return withLaunchFileLock(entry.Path,func()error{
+        digest,err:=digestExecutable(entry.Path)
+        if err!=nil||subtle.ConstantTimeCompare([]byte(digest),[]byte(entry.Digest))!=1{
+            s.active.recordLaunchWithHash(entry.Path,"launch-denied","SHA-256 changed since review",entry.Score,entry.Digest)
+            return errors.New("executable changed since review; scan again")
+        }
+        launcher:=s.launchRunner
+        if launcher==nil{launcher=launchReviewedExecutable}
+        if err:=launcher(entry.Path);err!=nil{
+            s.active.recordLaunchWithHash(entry.Path,"launch-failed",fmt.Sprintf("Windows ShellExecuteEx did not launch executable: %v",err),entry.Score,digest)
+            return err
+        }
+        s.active.recordLaunchWithHash(entry.Path,"launch-approved","User explicitly approved Scan & Run after static inspection; Windows ShellExecuteEx(open) used for production launches",entry.Score,digest)
+        return nil
+    })
 }
 func registerLaunchRoutes(mux *http.ServeMux,s *Server){
     if s.active==nil{return}

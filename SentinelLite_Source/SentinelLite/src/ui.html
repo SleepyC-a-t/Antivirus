@@ -262,10 +262,15 @@ $('activeLaunch').onclick=async()=>{
  try {
    const r=await api('/api/active/launch-choose',{});
    if(r.cancelled)return;
-   const details=r.reasons?.length?r.reasons.join('\n  • '):'No heuristic indicators found.';
+   const details=r.reasons?.length?r.reasons.join('\n  • '):'No indicators found by SentinelGuard (not proof of safety).';
    const warning=r.score>=50?'\n\nWARNING: SentinelGuard flagged potentially suspicious behavior.':'';
    const promptText='Scan & Run — REVIEW BEFORE LAUNCH\n\n'+r.path+
      '\nScore: '+r.score+' | '+r.severity+
+     '\nSHA-256: '+r.sha256+
+     '\nSize: '+r.size+' bytes'+
+     '\nAuthenticode: '+r.signatureStatus+' | Publisher: '+r.publisher+
+     '\nZone.Identifier: '+r.zone+
+     '\nInspection: '+r.inspection+
      '\nIndicators:\n  • '+details+warning+
      '\n\n'+r.warning+'\n\nRun this program anyway?';
    const approved=confirm(promptText);
