@@ -6,6 +6,7 @@ import(
     "encoding/json"
     "errors"
     "fmt"
+    "io"
     "os"
     "path/filepath"
     "strings"
@@ -44,6 +45,9 @@ type independentSummary struct{
     Note string `json:"note"`
 }
 func evaluateIndependentHoldout(manifestPath string)(independentSummary,error) {
+    manifestStat,err:=os.Stat(manifestPath)
+    if err!=nil{return independentSummary{},err}
+    if manifestStat.Size()>4*1024*1024{return independentSummary{},errors.New("manifest too large")}
     raw,err:=os.ReadFile(manifestPath);if err!=nil{return independentSummary{},err}
     var manifest independentHoldoutManifest
     if err=json.Unmarshal(raw,&manifest);err!=nil{return independentSummary{},err}
@@ -55,6 +59,8 @@ func evaluateIndependentHoldout(manifestPath string)(independentSummary,error) {
         LabelProvenance:manifest.LabelProvenance,Results:[]independentResult{},
         Note:"Static read-only heuristic evaluation. Labels come from the independent provider, not SentinelGuard. Suspicious indicators are not proof of maliciousness. No sample executed or quarantined."}
     root,err:=filepath.Abs(filepath.Dir(manifestPath));if err!=nil{return summary,err}
+    canonicalRoot,err:=filepath.EvalSymlinks(root)
+    if err!=nil{return summary,err}
     for _,sample:=range manifest.Samples {
         if sample.Label!="suspicious"&&sample.Label!="benign" {
             return summary,fmt.Errorf("invalid label for %q",sample.Path)
@@ -67,16 +73,32 @@ func evaluateIndependentHoldout(manifestPath string)(independentSummary,error) {
             return summary,fmt.Errorf("sample escapes corpus root: %q",sample.Path)
         }
         p:=filepath.Join(root,clean)
+        resolved,err:=filepath.EvalSymlinks(p)
+        if err!=nil{return summary,err}
+        relative,err:=filepath.Rel(canonicalRoot,resolved)
+        if err!=nil||relative==".."||strings.HasPrefix(relative,".."+string(os.PathSeparator))||
+           filepath.IsAbs(relative) {return summary,fmt.Errorf("sample leaves canonical corpus root: %q",sample.Path)}
         st,err:=os.Lstat(p)
         if err!=nil{return summary,err}
         if !st.Mode().IsRegular()||st.Mode()&os.ModeSymlink!=0||isReparse(p) {
             return summary,fmt.Errorf("sample is not regular file: %q",sample.Path)
         }
         if len(sample.SHA256)!=64{return summary,fmt.Errorf("missing SHA-256 for %q",sample.Path)}
-        data,err:=os.ReadFile(p)
+        if st.Size()>512*1024*1024{
+            summary.Uninspected++
+            summary.Results=append(summary.Results,independentResult{Path:sample.Path,
+              Label:sample.Label,Error:"File exceeds the 512-MiB holdout size limit"})
+            continue
+        }
+        file,err:=os.Open(p)
         if err!=nil{return summary,err}
-        sum:=sha256.Sum256(data)
-        if !strings.EqualFold(hex.EncodeToString(sum[:]),sample.SHA256) {
+        hasher:=sha256.New()
+        copied,copyErr:=io.Copy(hasher,io.LimitReader(file,512*1024*1024+1))
+        closeErr:=file.Close()
+        if copyErr!=nil{return summary,copyErr}
+        if closeErr!=nil{return summary,closeErr}
+        if copied!=st.Size(){return summary,fmt.Errorf("sample changed while being hashed: %q",sample.Path)}
+        if !strings.EqualFold(hex.EncodeToString(hasher.Sum(nil)),sample.SHA256) {
             return summary,fmt.Errorf("SHA-256 mismatch for %q",sample.Path)
         }
         result:=independentResult{Path:sample.Path,Label:sample.Label}
