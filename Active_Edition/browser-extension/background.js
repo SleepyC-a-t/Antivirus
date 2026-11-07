@@ -82,18 +82,31 @@ async function fetchFeed() {
     return urls;
   }finally{clearTimeout(timer);}
 }
+// Verify a fresh nonce/HMAC challenge before believing any localhost server.
+// The persistent pairing secret NEVER travels in an HTTP request header.
 async function pairedAppIsOn(pair) {
   if(!pair || typeof pair.endpoint!=="string" || typeof pair.token!=="string")return false;
   const endpoint=new URL(pair.endpoint);
   if(endpoint.protocol!=="http:"||endpoint.hostname!=="127.0.0.1"||
      endpoint.pathname!=="/api/active/extension-status"||endpoint.search)return false;
-  const ctl=new AbortController();const timer=setTimeout(()=>ctl.abort(),5000);
+  const nonceBytes=new Uint8Array(24);
+  crypto.getRandomValues(nonceBytes);
+  const nonce=btoa(String.fromCharCode(...nonceBytes)).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+  const ctl=new AbortController(), timer=setTimeout(()=>ctl.abort(),5000);
   try{
-    const response=await fetch(endpoint.href,{headers:{"X-Sentinel-Token":pair.token},
+    const response=await fetch(endpoint.href,{headers:{"X-Sentinel-Nonce":nonce},
       cache:"no-store",credentials:"omit",signal:ctl.signal,referrerPolicy:"no-referrer"});
     if(!response.ok)return false;
-    const payload=await response.json();
-    return payload.enabled===true && payload.edition==="SentinelGuard 4.0";
+    const data=await response.json();
+    if(data.edition!=="SentinelGuard 4.1" || data.nonce!==nonce ||
+       typeof data.enabled!=="boolean" || typeof data.signature!=="string")return false;
+    const key=await crypto.subtle.importKey("raw",new TextEncoder().encode(pair.token),
+      {name:"HMAC",hash:"SHA-256"},false,["verify"]);
+    const raw=atob(data.signature.replace(/-/g,"+").replace(/_/g,"/"));
+    const mac=Uint8Array.from(raw,ch=>ch.charCodeAt(0));
+    const message=nonce+"|"+String(data.enabled)+"|SentinelGuard 4.1";
+    if(!await crypto.subtle.verify("HMAC",key,mac,new TextEncoder().encode(message)))return false;
+    return data.enabled;
   }finally{clearTimeout(timer);}
 }
 let running=null;
