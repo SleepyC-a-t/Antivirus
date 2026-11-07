@@ -77,7 +77,7 @@ func newActiveMonitor(vault *Vault) *ActiveMonitor {
 }
 func (a *ActiveMonitor) snapshot() ActiveStatus {
     a.mu.RLock();defer a.mu.RUnlock()
-    out:=ActiveStatus{Edition:"SentinelGuard 4.1",Enabled:a.enabled,AutoQuarantine:a.autoQuarantine,LaunchReviewEnabled:a.launchReviewEnabled,WatcherMode:activeNativeWatcherMode(),LaunchReviews:a.launchReviews,LaunchAllowed:a.launchAllowed,LaunchDenied:a.launchDenied,
+    out:=ActiveStatus{Edition:"SentinelGuard 4.2",Enabled:a.enabled,AutoQuarantine:a.autoQuarantine,LaunchReviewEnabled:a.launchReviewEnabled,WatcherMode:activeNativeWatcherMode(),LaunchReviews:a.launchReviews,LaunchAllowed:a.launchAllowed,LaunchDenied:a.launchDenied,
         LaunchEvents:append([]ActiveEvent{},a.launchEvents...),LaunchLogOmitted:a.launchLogOmitted,
         WatchedFolders:append([]string{},a.watched...),Inspected:a.inspected,Flagged:a.flagged,
         Quarantined:a.quarantined,LastError:a.lastError,Events:append([]ActiveEvent{},a.events...),

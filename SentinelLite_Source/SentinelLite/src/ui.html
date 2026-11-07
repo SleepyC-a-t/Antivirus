@@ -170,7 +170,7 @@ function renderStatus(){
 async function refresh(){
  try{
   let j=await api('/api/snapshot');state.connectionLosses=0;state.status=j.status;state.findings=j.findings||[];
-  if(j.product?.activeEdition){document.querySelector('#activeProtectionPanel').classList.remove('hide');document.title='SentinelGuard 4.1 · Security Center';if(!state.activeEdition){state.activeEdition=true;refreshActive();}}
+  if(j.product?.activeEdition){document.querySelector('#activeProtectionPanel').classList.remove('hide');document.title='SentinelGuard 4.2 · Security Center';if(!state.activeEdition){state.activeEdition=true;refreshActive();}}
   for(let id of [...state.selected])if(!state.findings.some(f=>f.id===id&&f.canQuarantine))state.selected.delete(id);
   renderStatus();if(state.activeTab==='findings')renderFindings();
  }catch(e){state.connectionLosses++;if(state.connectionLosses>=3)renderStatus()}
@@ -313,7 +313,7 @@ $('scan').onclick=start;$('cancel').onclick=async()=>{try{await api('/api/stop',
 $('windowsSecurity').onclick=async()=>{try{await api('/api/security',{})}catch(e){toastError(e)}};
 $('exit').onclick=async()=>{if(!confirm('Exit SentinelGuard? Scanning, if active, will stop.'))return;try{await api('/api/exit',{});document.body.innerHTML='<main style="max-width:600px;margin:100px auto;padding:30px;color:#cbd5e1;font:18px system-ui"><h2>SentinelGuard closed.</h2><p>You can close this browser tab. Restart SentinelGuard.exe to run another scan.</p></main>'}catch(e){toastError(e)}};
 $('exportRedacted').onclick=()=>{const a=document.createElement('a');a.href='/api/report?redacted=1&token='+encodeURIComponent(TOKEN);a.download='SentinelGuard_v4.2_Redacted_Report.json';document.body.appendChild(a);a.click();a.remove()};
-$('export').onclick=()=>{const a=document.createElement('a');a.href='/api/report?token='+encodeURIComponent(TOKEN);a.download='SentinelGuard_v4.1_Report.json';document.body.appendChild(a);a.click();a.remove()};
+$('export').onclick=()=>{const a=document.createElement('a');a.href='/api/report?token='+encodeURIComponent(TOKEN);a.download='SentinelGuard_v4.2_Report.json';document.body.appendChild(a);a.click();a.remove()};
 $('refreshVault').onclick=refreshVault;document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>tabs(b.dataset.tab));
 async function poll(){await refresh();setTimeout(poll,1000)}
 poll();refreshVault();

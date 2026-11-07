@@ -23,7 +23,7 @@ var pages embed.FS
 
 // Built separately with -ldflags '-X main.edition=active'. The standard
 // SentinelGuard executable retains its existing on-demand behavior.
-var edition = "integrated" // v4.1 combines manual and opt-in live scanning
+var edition = "integrated" // v4.2 combines manual and opt-in live scanning
 
 type Server struct {
     active *ActiveMonitor
@@ -140,7 +140,7 @@ func (s *Server) routes() http.Handler {
 	})
 	mux.HandleFunc("/api/snapshot", func(w http.ResponseWriter, r *http.Request) {
 		status, fs := s.app.snapshot()
-		sendJSON(w, map[string]any{"status": status, "findings": fs, "product": map[string]any{"name":"SentinelGuard","version":"4.1", "type":"manual and optional live-protection scanner","activeEdition":s.active!=nil,"desktop":true}})
+		sendJSON(w, map[string]any{"status": status, "findings": fs, "product": map[string]any{"name":"SentinelGuard","version":"4.2", "type":"manual and optional live-protection scanner","activeEdition":s.active!=nil,"desktop":true}})
 	})
 	mux.HandleFunc("/api/choose-folder", func(w http.ResponseWriter, r *http.Request) {
         if !requirePost(w, r) { return }
@@ -402,8 +402,8 @@ func (s *Server) routes() http.Handler {
 		st, fs := s.app.snapshot()
 		skippedPaths := s.app.skippedSnapshot()
 		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Content-Disposition", `attachment; filename="SentinelGuard_v4.1_Report.json"`)
-		report:=map[string]any{"product": "SentinelGuard", "version": "4.1", "exportedAt": time.Now(), "status": st, "findings": fs, "skippedPaths": skippedPaths, "notice": "These findings may be false positives. Defender scans are separate from heuristic scans."}
+		w.Header().Set("Content-Disposition", `attachment; filename="SentinelGuard_v4.2_Report.json"`)
+		report:=map[string]any{"product": "SentinelGuard", "version": "4.2", "exportedAt": time.Now(), "status": st, "findings": fs, "skippedPaths": skippedPaths, "notice": "These findings may be false positives. Defender scans are separate from heuristic scans."}
         if s.active!=nil {report["liveProtection"]=s.active.snapshot()}
         if r.URL.Query().Get("redacted")=="1"{
             safe,err:=redactExport(report)
