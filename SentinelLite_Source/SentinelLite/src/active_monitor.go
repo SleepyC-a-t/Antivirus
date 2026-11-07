@@ -32,6 +32,7 @@ type ActiveStatus struct {
     Enabled bool `json:"enabled"`
     AutoQuarantine bool `json:"autoQuarantine"`
     SafeLaunch bool `json:"safeLaunch"`
+    PairingPersistent bool `json:"pairingPersistent"`
     LaunchChecks int64 `json:"launchChecks"`
     LaunchApproved int64 `json:"launchApproved"`
     LaunchDenied int64 `json:"launchDenied"`
@@ -51,6 +52,7 @@ type ActiveMonitor struct {
     enabled bool
     autoQuarantine bool
     safeLaunch bool
+    pairingPersistent bool
     launchChecks, launchApproved, launchDenied int64
     launchEvents []ActiveEvent
     watched []string
@@ -73,7 +75,7 @@ func newActiveMonitor(vault *Vault) *ActiveMonitor {
 }
 func (a *ActiveMonitor) snapshot() ActiveStatus {
     a.mu.RLock();defer a.mu.RUnlock()
-    out:=ActiveStatus{Edition:"SentinelGuard 4.1",Enabled:a.enabled,AutoQuarantine:a.autoQuarantine,SafeLaunch:a.safeLaunch,
+    out:=ActiveStatus{Edition:"SentinelGuard 4.1",Enabled:a.enabled,AutoQuarantine:a.autoQuarantine,SafeLaunch:a.safeLaunch,PairingPersistent:a.pairingPersistent,
         LaunchChecks:a.launchChecks,LaunchApproved:a.launchApproved,LaunchDenied:a.launchDenied,
         LaunchEvents:append([]ActiveEvent{},a.launchEvents...),
         WatchedFolders:append([]string{},a.watched...),Inspected:a.inspected,Flagged:a.flagged,

@@ -69,7 +69,7 @@ button{background:#203149;border:1px solid #39516b;color:#dce7f9;padding:10px 14
   <main>
     <section id="activeProtectionPanel" class="active-panel hide" aria-label="Live file protection">
       <div class="active-heading"><div><div class="eyebrow">LIVE PROTECTION · OPTIONAL</div><h2>Download protection <span id="activeState" class="active-bad">OFF</span></h2>
-      <p class="active-sub">OFF by default. Monitors selected folders while this application is open. It does not intercept file execution or network traffic.</p></div>
+      <p class="active-sub">OFF by default. Watches Windows file-change events and periodically reconciles selected folders while this application is open. It does not intercept file execution or network traffic.</p></div>
       <button class="primary" id="activeToggle">Turn protection ON</button></div>
       <div class="active-stats"><div><small>New/changed files checked</small><b id="activeInspected">0</b></div>
         <div><small>Flagged for review</small><b id="activeFlagged">0</b></div>
@@ -89,8 +89,11 @@ button{background:#203149;border:1px solid #39516b;color:#dce7f9;padding:10px 14
       <div class="active-options"><b>Folders monitored:</b><div id="activeWatchedFolders" class="active-watch">Not configured</div>
       <div class="active-btns"><button class="outline" id="activeAddFolder">Add folder…</button><button class="outline" id="activeRemoveFolder">Remove folder…</button></div></div>
       <div class="active-options"><b>Browser protection (optional companion extension)</b>
-      <p class="active-sub">Blocks exact phishing URLs from a free community feed in Firefox/Chrome/Edge after you pair the extension. Controlled by the ON/OFF switch, with up to a 1-minute delay. Never intercepts or uploads browsing history.</p>
-      <div class="active-btns"><button class="outline" id="activePair">Copy read-only browser pairing link</button><button class="outline" id="activeReport">Export protection report</button></div>
+      <p class="active-sub">Blocks matching phishing URLs (including safe query variants) from an optional community feed in Firefox/Chrome/Edge after you pair the extension. Controlled by the ON/OFF switch, with up to a 1-minute delay. Never intercepts or uploads browsing history.</p>
+      <div class="active-btns"><button class="outline" id="activePair">Copy read-only browser pairing link</button>
+      <button class="outline" id="activeRevoke">Revoke browser pairing</button>
+      <button class="outline" id="activeReport">Export protection report</button></div>
+      <p class="active-sub" id="activePairStatus">Checking pairing availability…</p>
       <p id="activeMessage" class="active-sub"></p></div>
       <div class="active-options"><b>Recent protection events</b><div id="activeEvents" class="active-events">No events yet.</div></div>
     </section>
@@ -217,6 +220,9 @@ async function refreshActive(){
    $('activeState').className=j.enabled?'active-good':'active-bad';
    $('activeToggle').textContent=j.enabled?'Turn protection OFF':'Turn protection ON';
    $('activeAutoBlock').checked=!!j.autoQuarantine;
+   $('activePairStatus').textContent=j.pairingPersistent?
+       'Encrypted pairing is remembered across application restarts. Revoke it here if your browser extension or pairing link is compromised.':
+       'Temporary pairing is in use. Re-pair the extension after restarting the application.';
    $('activeSafeLaunch').checked=!!j.safeLaunch;
    $('activeSafeLaunch').disabled=!j.enabled;
    $('activeRunExe').disabled=!j.enabled||!j.safeLaunch;
@@ -284,11 +290,21 @@ $('activeRemoveFolder').onclick=async()=>{
  if(!folder)return;
  try{await api('/api/active/unwatch',{Path:folder});await refreshActive()}catch(e){toastError(e)}
 };
+$('activeRevoke').onclick=async()=>{
+ if(!confirm('Revoke browser pairing? All previously paired extensions will lose browser protection until you pair again.'))return;
+ try{
+   await api('/api/active/revoke-browser',{});
+   $('activeMessage').textContent='Browser pairing revoked. Copy a new pairing link to reconnect trusted extensions.';
+   await refreshActive();
+ }catch(e){toastError(e)}
+};
 $('activePair').onclick=async()=>{
  try{
    const response=await api('/api/active/browser-pair');
    await navigator.clipboard.writeText(response.pairing);
-   $('activeMessage').textContent='Read-only pairing link copied. Paste it into the SentinelGuard browser extension popup. Treat it as a private connection secret.';
+   $('activeMessage').textContent=response.persistent?
+     'Encrypted persistent pairing link copied. Paste once into the extension popup; revoke it if compromised.':
+     'Temporary pairing copied; another copy will be required after restarting.';
  }catch(e){toastError(e)}
 };
 $('activeReport').onclick=()=>{

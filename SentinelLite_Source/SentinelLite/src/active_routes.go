@@ -58,6 +58,8 @@ func registerActiveRoutes(mux *http.ServeMux,s *Server){
     })
     mux.HandleFunc("/api/active/revoke-browser",func(w http.ResponseWriter,r *http.Request){
         if !requirePost(w,r){return}
+        s.pairingUpdateMu.Lock()
+        defer s.pairingUpdateMu.Unlock()
         if !s.pairingPersistent {
             fresh,err:=generateBrowserPairConfig()
             if err!=nil{apiError(w,500,err);return}

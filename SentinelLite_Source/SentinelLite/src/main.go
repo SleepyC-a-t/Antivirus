@@ -24,12 +24,13 @@ var pages embed.FS
 
 // Built separately with -ldflags '-X main.edition=active'. The standard
 // SentinelGuard executable retains its existing on-demand behavior.
-var edition = "integrated" // v4.0 combines manual and opt-in live scanning
+var edition = "integrated" // v4.1 combines manual, live and optional prelaunch scanning
 
 type Server struct {
     active *ActiveMonitor
     extensionToken string // protected by extensionMu
     extensionMu sync.RWMutex
+    pairingUpdateMu sync.Mutex
     pairingPath string
     pairingPersistent bool
     pairingConfig BrowserPairConfig
@@ -471,6 +472,7 @@ func main() {
     if edition=="integrated" || edition=="active" {
         server.active=newActiveMonitor(vault)
         server.pairingPersistent=pairPersistent
+        server.active.pairingPersistent=pairPersistent
         server.pairingPath=pairingFilePath()
         if pairPersistent {
             server.pairingConfig=pairConfig
