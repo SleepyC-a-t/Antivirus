@@ -51,7 +51,7 @@ button{background:#203149;border:1px solid #39516b;color:#dce7f9;padding:10px 14
 <body>
 <div class="wrap">
  <header class="top"><div class="brand"><div class="mark">◆</div><div><h1>SentinelGuard <span style="font-size:10px;font-weight:600;color:var(--accent);vertical-align:top">v3.3</span></h1><small>On-demand threat investigation · Windows 10 / 11</small></div></div><div class="top-actions"><span class="tag">● Local-only · No uploads</span><button class="outline" id="windowsSecurity">Open Windows Security</button><button class="outline" id="exit">Exit application</button></div></header>
- <section class="hero"><span class="eyebrow">SENTINELGUARD 4.0 · DESKTOP SECURITY CENTER</span><h2>Inspect first. Decide what happens next.</h2><p>One security center for on-demand scanning and optional download protection. Your live shield starts <strong>OFF</strong>. Heuristic findings are evidence for review, not proof of infection. Keep your main antivirus enabled.</p></section>
+ <section class="hero"><span class="eyebrow">SENTINELGUARD 4.1 · DESKTOP SECURITY CENTER</span><h2>Inspect first. Decide what happens next.</h2><p>One security center for on-demand scanning and optional download protection. Your live shield starts <strong>OFF</strong>. Heuristic findings are evidence for review, not proof of infection. Keep your main antivirus enabled.</p></section>
  <div class="shell">
   <aside><div class="panel"><h3>Configure a scan</h3><p class="section-desc">Choose a scanning engine and the areas to inspect. Nothing is quarantined automatically by SentinelGuard.</p>
     <div class="control-label">Scanning engine</div>
@@ -69,18 +69,31 @@ button{background:#203149;border:1px solid #39516b;color:#dce7f9;padding:10px 14
   <main>
     <section id="activeProtectionPanel" class="active-panel hide" aria-label="Live file protection">
       <div class="active-heading"><div><div class="eyebrow">LIVE PROTECTION · OPTIONAL</div><h2>Download protection <span id="activeState" class="active-bad">OFF</span></h2>
-      <p class="active-sub">OFF by default. Monitors selected folders while this application is open. It does not intercept file execution or network traffic.</p></div>
+      <p class="active-sub">OFF by default. Watches Windows file-change events and periodically reconciles selected folders while this application is open. It does not intercept file execution or network traffic.</p></div>
       <button class="primary" id="activeToggle">Turn protection ON</button></div>
       <div class="active-stats"><div><small>New/changed files checked</small><b id="activeInspected">0</b></div>
         <div><small>Flagged for review</small><b id="activeFlagged">0</b></div>
         <div><small>High-confidence quarantined</small><b id="activeBlocked">0</b></div></div>
       <div class="active-options"><label><input type="checkbox" id="activeAutoBlock"> Allow auto-quarantine for high-confidence downloads (score ≥ 110 only)</label>
       <p class="active-sub">Review-level findings are never automatically quarantined. There is a delay after a download finishes; do not open untrusted files before your main antivirus scans them.</p></div>
+      <div class="active-options">
+      <b>Scan &amp; Run — optional pre-launch check</b>
+      <p class="active-sub">OFF by default. Only programs launched through this button are checked before execution. Normal Explorer double-clicks are <b>not intercepted</b>. Suspicious .exe files trigger a native Windows confirmation, defaulting to No.</p>
+      <label><input type="checkbox" id="activeSafeLaunch"> Enable Scan &amp; Run while live protection is ON</label>
+      <div class="active-btns"><button class="outline" id="activeBrowseExe">Choose .exe…</button>
+      <button class="outline" id="activeRunExe">Scan &amp; Run selected program</button></div>
+      <input id="activeExePath" type="text" placeholder="Choose a .exe above, or enter its full path" aria-label="Executable path" spellcheck="false" autocomplete="off">
+      <p id="activeLaunchMessage" class="active-sub" aria-live="polite">No program selected. No program is launched automatically.</p>
+      <p class="active-sub" id="activeLaunchCounters">Launch checks: 0 · Allowed: 0 · Denied: 0</p>
+      </div>
       <div class="active-options"><b>Folders monitored:</b><div id="activeWatchedFolders" class="active-watch">Not configured</div>
       <div class="active-btns"><button class="outline" id="activeAddFolder">Add folder…</button><button class="outline" id="activeRemoveFolder">Remove folder…</button></div></div>
       <div class="active-options"><b>Browser protection (optional companion extension)</b>
-      <p class="active-sub">Blocks exact phishing URLs from a free community feed in Firefox/Chrome/Edge after you pair the extension. Controlled by the ON/OFF switch, with up to a 1-minute delay. Never intercepts or uploads browsing history.</p>
-      <div class="active-btns"><button class="outline" id="activePair">Copy read-only browser pairing link</button><button class="outline" id="activeReport">Export protection report</button></div>
+      <p class="active-sub">Blocks matching phishing URLs (including safe query variants) from an optional community feed in Firefox/Chrome/Edge after you pair the extension. Controlled by the ON/OFF switch, with up to a 1-minute delay. Never intercepts or uploads browsing history.</p>
+      <div class="active-btns"><button class="outline" id="activePair">Copy read-only browser pairing link</button>
+      <button class="outline" id="activeRevoke">Revoke browser pairing</button>
+      <button class="outline" id="activeReport">Export protection report</button></div>
+      <p class="active-sub" id="activePairStatus">Checking pairing availability…</p>
       <p id="activeMessage" class="active-sub"></p></div>
       <div class="active-options"><b>Recent protection events</b><div id="activeEvents" class="active-events">No events yet.</div></div>
     </section>
@@ -103,6 +116,7 @@ button{background:#203149;border:1px solid #39516b;color:#dce7f9;padding:10px 14
         <details class="report-privacy" id="reportPrivacy"><summary>Privacy and JSON report contents — read before sharing</summary>
           <p><strong>Includes:</strong> product name and version; export timestamp (<code>exportedAt</code>); a notice; scan status (<code>active</code>, <code>mode</code>, <code>current</code> scan path, file/skipped/finding/omitted counts, scan start time, error text, and <code>resources</code> containing the CPU and memory current/average/peak values, sample count, and sample timestamp). <code>current</code> and errors can contain full folder or drive paths.</p>
           <p><strong>Skipped paths:</strong> <code>skippedPaths</code> lists full filesystem paths and readable reasons (for example, access denied, reparse point, or an archive inspection limit). <code>status.skipLogOmitted</code> counts any records beyond the 100,000-entry memory safety limit. Unlike the previous version, a scan may contain more identifiable filesystem metadata even when no threats were found. Defender's separate engine does not expose per-file skip telemetry.</p>
+          <p><strong>Live protection and Scan &amp; Run:</strong> the combined scan JSON also contains <code>liveProtection</code>. The separate Live export contains <code>status</code> with watched folders, recent clean and flagged file paths, timestamps, scores, timing, protection toggles, launch-decision totals, and <code>launchEvents</code> describing program paths and whether users approved or declined launches. The latest 300 general events and 120 launch events are retained; <code>eventsOmitted</code> and <code>launchEventsOmitted</code> disclose any aged-out entries. These reports can disclose private filenames and application paths. The browser pairing secret, browser history, passwords, and raw file contents are <strong>not</strong> exported.</p>
           <p><strong>For each flagged item:</strong> a random per-scan finding ID, full <code>path</code>, filename, score, severity, detection engine, written explanations, file size, last-modified timestamp, and whether manual quarantine is available. A reason may mention filenames inside an archive or a detected threat name.</p>
           <p><strong>Personal information that may be revealed:</strong> your Windows account name inside <code>C:\Users\...</code> paths, drive letters, folder names, project/document names, and Windows account SID strings (for example in Recycle Bin paths). File names and timestamps may reveal what software or documents you use and when they were modified. The skipped-path list can additionally expose folders and private filenames unrelated to detected threats. The random finding ID is not a Windows user ID.</p>
           <p><strong>Not included:</strong> actual file contents, passwords, browser cookies, local browser history, scan authentication token, or the quarantine vault inventory. File SHA-256 hashes viewed separately in the app are not part of this export. IP addresses and email addresses are not separately collected, but could appear if you used them in a filename or path.</p>
@@ -165,7 +179,7 @@ function renderStatus(){
 async function refresh(){
  try{
   let j=await api('/api/snapshot');state.connectionLosses=0;state.status=j.status;state.findings=j.findings||[];
-  if(j.product?.activeEdition){document.querySelector('#activeProtectionPanel').classList.remove('hide');document.title='SentinelGuard 4.0 · Security Center';if(!state.activeEdition){state.activeEdition=true;refreshActive();}}
+  if(j.product?.activeEdition){document.querySelector('#activeProtectionPanel').classList.remove('hide');document.title='SentinelGuard 4.1 · Security Center';if(!state.activeEdition){state.activeEdition=true;refreshActive();}}
   for(let id of [...state.selected])if(!state.findings.some(f=>f.id===id&&f.canQuarantine))state.selected.delete(id);
   renderStatus();if(state.activeTab==='findings')renderFindings();
  }catch(e){state.connectionLosses++;if(state.connectionLosses>=3)renderStatus()}
@@ -207,6 +221,13 @@ async function refreshActive(){
    $('activeState').className=j.enabled?'active-good':'active-bad';
    $('activeToggle').textContent=j.enabled?'Turn protection OFF':'Turn protection ON';
    $('activeAutoBlock').checked=!!j.autoQuarantine;
+   $('activePairStatus').textContent=j.pairingPersistent?
+       'Encrypted pairing is remembered across application restarts. Revoke it here if your browser extension or pairing link is compromised.':
+       'Temporary pairing is in use. Re-pair the extension after restarting the application.';
+   $('activeSafeLaunch').checked=!!j.safeLaunch;
+   $('activeSafeLaunch').disabled=!j.enabled;
+   $('activeRunExe').disabled=!j.enabled||!j.safeLaunch;
+   $('activeLaunchCounters').textContent='Launch checks: '+(j.launchChecks||0)+' · Allowed: '+(j.launchApproved||0)+' · Denied: '+(j.launchDenied||0);
    $('activeInspected').textContent=fmt(j.inspected||0);
    $('activeFlagged').textContent=fmt(j.flagged||0);
    $('activeBlocked').textContent=fmt(j.quarantined||0);
@@ -232,6 +253,29 @@ $('activeAutoBlock').onchange=async()=>{
  try{await api('/api/active/autoblock',{Enabled:$('activeAutoBlock').checked});await refreshActive()}
  catch(e){toastError(e);await refreshActive()}
 };
+$('activeSafeLaunch').onchange=async()=>{
+ try{await api('/api/active/safe-launch-toggle',{Enabled:$('activeSafeLaunch').checked});await refreshActive()}
+ catch(e){toastError(e);await refreshActive()}
+};
+$('activeBrowseExe').onclick=async()=>{
+ try{
+   const choice=await api('/api/active/choose-executable',{});
+   if(choice.path&&!choice.cancelled){$('activeExePath').value=choice.path}
+ }catch(e){toastError(e)}
+};
+$('activeRunExe').onclick=async()=>{
+ const path=$('activeExePath').value.trim();
+ if(!path){$('activeLaunchMessage').textContent='Select a .exe program first.';return}
+ $('activeRunExe').disabled=true;
+ $('activeLaunchMessage').textContent='Checking file before launch; a native Windows warning may appear…';
+ try {
+   const r=await api('/api/active/safe-launch',{Path:path});
+   $('activeLaunchMessage').textContent=r.started?
+      'Windows launch requested. This does not guarantee the program is safe.':
+      'Program was not launched: '+(r.message||r.decision);
+   await refreshActive();
+ }catch(e){$('activeLaunchMessage').textContent=e.message||String(e);await refreshActive();}
+};
 $('activeAddFolder').onclick=async()=>{
  try{
    const choice=await api('/api/choose-folder',{});
@@ -247,11 +291,21 @@ $('activeRemoveFolder').onclick=async()=>{
  if(!folder)return;
  try{await api('/api/active/unwatch',{Path:folder});await refreshActive()}catch(e){toastError(e)}
 };
+$('activeRevoke').onclick=async()=>{
+ if(!confirm('Revoke browser pairing? All previously paired extensions will lose browser protection until you pair again.'))return;
+ try{
+   await api('/api/active/revoke-browser',{});
+   $('activeMessage').textContent='Browser pairing revoked. Copy a new pairing link to reconnect trusted extensions.';
+   await refreshActive();
+ }catch(e){toastError(e)}
+};
 $('activePair').onclick=async()=>{
  try{
    const response=await api('/api/active/browser-pair');
    await navigator.clipboard.writeText(response.pairing);
-   $('activeMessage').textContent='Read-only pairing link copied. Paste it into the SentinelGuard browser extension popup. Treat it as a private connection secret.';
+   $('activeMessage').textContent=response.persistent?
+     'Encrypted persistent pairing link copied. Paste once into the extension popup; revoke it if compromised.':
+     'Temporary pairing copied; another copy will be required after restarting.';
  }catch(e){toastError(e)}
 };
 $('activeReport').onclick=()=>{
@@ -268,8 +322,8 @@ function updateEngine(){let defender=document.querySelector('[name=engine]:check
 document.querySelectorAll('[name=engine]').forEach(e=>e.onchange=updateEngine);
 $('scan').onclick=start;$('cancel').onclick=async()=>{try{await api('/api/stop',{})}catch(e){toastError(e)}};
 $('windowsSecurity').onclick=async()=>{try{await api('/api/security',{})}catch(e){toastError(e)}};
-$('exit').onclick=async()=>{if(!confirm('Exit SentinelGuard? Scanning, if active, will stop.'))return;try{await api('/api/exit',{});document.body.innerHTML='<main style="max-width:600px;margin:100px auto;padding:30px;color:#cbd5e1;font:18px system-ui"><h2>SentinelGuard closed.</h2><p>You can close this browser tab. Restart SentinelGuard.exe to run another scan.</p></main>'}catch(e){toastError(e)}};
-$('export').onclick=()=>{const a=document.createElement('a');a.href='/api/report?token='+encodeURIComponent(TOKEN);a.download='SentinelGuard_v4.0_Report.json';document.body.appendChild(a);a.click();a.remove()};
+$('exit').onclick=async()=>{if(!confirm('Exit SentinelGuard? Scanning, if active, will stop.'))return;try{await api('/api/exit',{});document.body.innerHTML='<main style="max-width:600px;margin:100px auto;padding:30px;color:#cbd5e1;font:18px system-ui"><h2>SentinelGuard closed.</h2><p>Close this window. Restart SentinelGuard to use the scanner again.</p></main>'}catch(e){toastError(e)}};
+$('export').onclick=()=>{const a=document.createElement('a');a.href='/api/report?token='+encodeURIComponent(TOKEN);a.download='SentinelGuard_v4.1_Report.json';document.body.appendChild(a);a.click();a.remove()};
 $('refreshVault').onclick=refreshVault;document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>tabs(b.dataset.tab));
 async function poll(){await refresh();setTimeout(poll,1000)}
 poll();refreshVault();

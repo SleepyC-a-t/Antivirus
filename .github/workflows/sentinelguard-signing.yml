@@ -1,0 +1,62 @@
+name: SentinelGuard — optional trusted Authenticode signing
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sign:
+    name: Sign reviewed main-branch release with user-supplied code-signing certificate
+    if: github.ref == 'refs/heads/main'
+    runs-on: windows-latest
+    environment: trusted-release
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: SentinelLite_Source/SentinelLite/src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: SentinelLite_Source/SentinelLite/src/go.mod
+          cache: false
+      - name: Run security regression tests
+        run: |
+          go mod verify
+          go vet ./...
+          go test -count=1 ./...
+      - name: Compile from reviewed main commit
+        run: |
+          $exe=Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.1.exe'
+          go build -trimpath -ldflags '-s -w -H windowsgui' -o $exe .
+      - name: Sign with an approved certificate (not supplied by ChatGPT)
+        env:
+          CERT_BASE64: ${{ secrets.SG_AUTHENTICODE_PFX_B64 }}
+          CERT_PASSWORD: ${{ secrets.SG_AUTHENTICODE_PFX_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:CERT_BASE64) -or [string]::IsNullOrWhiteSpace($env:CERT_PASSWORD)) {
+            throw 'Trusted release secrets not configured. Obtain a legitimate code-signing certificate first.'
+          }
+          $pfx=Join-Path $env:RUNNER_TEMP 'signing-certificate.pfx'
+          try {
+            [System.IO.File]::WriteAllBytes($pfx,[Convert]::FromBase64String($env:CERT_BASE64))
+            $tool=Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue |
+                  Sort-Object FullName -Descending | Select-Object -First 1
+            if (-not $tool) { throw 'SignTool was not found on the Windows runner.' }
+            $exe=Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.1.exe'
+            & $tool.FullName sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com /f $pfx /p $env:CERT_PASSWORD $exe
+            if ($LASTEXITCODE -ne 0) { throw 'Authenticode signing failed' }
+            & $tool.FullName verify /pa /v $exe
+            if ($LASTEXITCODE -ne 0) { throw 'Publisher certificate verification failed' }
+            Get-FileHash -Algorithm SHA256 $exe
+          }finally{
+            Remove-Item $pfx -Force -ErrorAction SilentlyContinue
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SentinelGuard-4.1-Authenticode-signed
+          path: ${{ runner.temp }}/SentinelGuard-4.1.exe
+          if-no-files-found: error
+          retention-days: 14

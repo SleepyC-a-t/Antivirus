@@ -14,6 +14,9 @@ func activeRequest(server *Server, method,path,token,origin string) *httptest.Re
   req.RemoteAddr="127.0.0.1:47000"
   req.Header.Set("X-Sentinel-Token",token)
   if origin!=""{req.Header.Set("Origin",origin)}
+  if method==http.MethodGet&&strings.Contains(path,"extension-status") {
+    req.Header.Set("X-Sentinel-Nonce","ABCDefgh123456789_-longnonce")
+  }
   rec:=httptest.NewRecorder()
   server.routes().ServeHTTP(rec,req)
   return rec
@@ -26,11 +29,14 @@ func TestActiveBrowserPairingIsReadOnly(t *testing.T) {
   server:=&Server{app:newApp(nil),active:monitor,token:"scanner-admin-secret",
       extensionToken:"browser-status-secret",address:"127.0.0.1:18885"}
   const origin="moz-extension://11111111-2222-3333-4444-555555555555"
-  good:=activeRequest(server,http.MethodGet,"/api/active/extension-status","browser-status-secret",origin)
+  good:=activeRequest(server,http.MethodGet,"/api/active/extension-status","",origin)
   if good.Code!=200 {t.Fatalf("extension status request failed: %d %s",good.Code,good.Body.String())}
-  var status struct{Enabled bool}
+  var status struct{Enabled bool; Signature string; Nonce string; Edition string}
   if err:=json.Unmarshal(good.Body.Bytes(),&status);err!=nil{t.Fatal(err)}
   if status.Enabled{t.Fatal("active protection should default to OFF")}
+  if status.Signature!=signBrowserState(server.extensionToken,status.Nonce,false) {
+      t.Fatal("browser response signature must authenticate enabled state")
+  }
   bad:=activeRequest(server,http.MethodPost,"/api/active/toggle","browser-status-secret",origin)
   if bad.Code!=403{t.Fatalf("read-only browser token used to toggle protection: HTTP %d",bad.Code)}
   admin:=activeRequest(server,http.MethodGet,"/api/active/browser-pair","scanner-admin-secret","")

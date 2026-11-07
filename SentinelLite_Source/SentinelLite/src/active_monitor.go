@@ -25,11 +25,20 @@ type ActiveEvent struct {
     Action string `json:"action"`
     Score int `json:"score"`
     Reason string `json:"reason"`
+    InspectionMs int64 `json:"inspectionMs,omitempty"`
 }
 type ActiveStatus struct {
     Edition string `json:"edition"`
     Enabled bool `json:"enabled"`
     AutoQuarantine bool `json:"autoQuarantine"`
+    SafeLaunch bool `json:"safeLaunch"`
+    PairingPersistent bool `json:"pairingPersistent"`
+    LaunchChecks int64 `json:"launchChecks"`
+    LaunchApproved int64 `json:"launchApproved"`
+    LaunchDenied int64 `json:"launchDenied"`
+    LaunchEvents []ActiveEvent `json:"launchEvents"`
+    EventsOmitted int64 `json:"eventsOmitted"`
+    LaunchEventsOmitted int64 `json:"launchEventsOmitted"`
     WatchedFolders []string `json:"watchedFolders"`
     Inspected int64 `json:"inspected"`
     Flagged int64 `json:"flagged"`
@@ -40,8 +49,15 @@ type ActiveStatus struct {
 }
 type ActiveMonitor struct {
     mu sync.RWMutex
+    pollMu sync.Mutex // scan snapshots must not race each other
+    wake chan struct{}
     enabled bool
     autoQuarantine bool
+    safeLaunch bool
+    pairingPersistent bool
+    launchChecks, launchApproved, launchDenied int64
+    launchEvents []ActiveEvent
+    eventsOmitted, launchEventsOmitted int64
     watched []string
     seen map[string]activeStamp
     pending map[string]activePending
@@ -58,19 +74,41 @@ func newActiveMonitor(vault *Vault) *ActiveMonitor {
     if stat,err:=os.Lstat(downloads);err==nil&&stat.IsDir()&&!isReparse(downloads) {
         folders=append(folders,downloads)
     }
-    return &ActiveMonitor{watched:folders,seen:make(map[string]activeStamp),pending:make(map[string]activePending),vault:vault,autoQuarantine:false,inspect:func(p string,st os.FileInfo)*Finding{return inspectFileProtected(p,st,nil)}}
+    return &ActiveMonitor{watched:folders,wake:make(chan struct{},1),seen:make(map[string]activeStamp),pending:make(map[string]activePending),vault:vault,autoQuarantine:false,inspect:func(p string,st os.FileInfo)*Finding{return inspectFileProtected(p,st,nil)}}
 }
 func (a *ActiveMonitor) snapshot() ActiveStatus {
     a.mu.RLock();defer a.mu.RUnlock()
-    out:=ActiveStatus{Edition:"SentinelGuard 4.0",Enabled:a.enabled,AutoQuarantine:a.autoQuarantine,
+    out:=ActiveStatus{Edition:"SentinelGuard 4.1",Enabled:a.enabled,AutoQuarantine:a.autoQuarantine,SafeLaunch:a.safeLaunch,PairingPersistent:a.pairingPersistent,
+        LaunchChecks:a.launchChecks,LaunchApproved:a.launchApproved,LaunchDenied:a.launchDenied,
+        LaunchEvents:append([]ActiveEvent{},a.launchEvents...),
+        EventsOmitted:a.eventsOmitted,LaunchEventsOmitted:a.launchEventsOmitted,
         WatchedFolders:append([]string{},a.watched...),Inspected:a.inspected,Flagged:a.flagged,
         Quarantined:a.quarantined,LastError:a.lastError,Events:append([]ActiveEvent{},a.events...),
-        Notice:"Near-real-time, user-mode monitoring of configured folders. New/changed files are inspected after download completion, not before execution. Only high-confidence findings (score >=110) are auto-quarantined when the user separately opts in. Website protection requires the optional paired browser extension; Bitdefender/Defender remain primary protection."}
+        Notice:"Windows filesystem events trigger file reviews, with a periodic reconciliation fallback. Inspection occurs after writes settle, not before external execution. Only high-confidence findings (score >=110) are auto-quarantined when the user separately opts in. Website protection requires the optional paired browser extension; Bitdefender/Defender remain primary protection."}
     return out
 }
 func (a *ActiveMonitor) appendEventLocked(e ActiveEvent) {
-    if len(a.events)>=80 {copy(a.events,a.events[1:]);a.events[len(a.events)-1]=e
+    if len(a.events)>=300 {copy(a.events,a.events[1:]);a.events[len(a.events)-1]=e;a.eventsOmitted++
     } else {a.events=append(a.events,e)}
+}
+func (a *ActiveMonitor) setSafeLaunch(value bool) error {
+    a.mu.Lock()
+    defer a.mu.Unlock()
+    if value && !a.enabled {return errors.New("enable live protection before enabling Scan & Run")}
+    a.safeLaunch=value
+    a.appendEventLocked(ActiveEvent{At:time.Now(),Action:"safe-launch-toggle",
+        Reason:fmt.Sprintf("Opt-in pre-launch Scan & Run: %t",value)})
+    return nil
+}
+func (a *ActiveMonitor) logLaunchEvent(e ActiveEvent) {
+    a.mu.Lock()
+    defer a.mu.Unlock()
+    if len(a.launchEvents)>=120 {
+        copy(a.launchEvents,a.launchEvents[1:])
+        a.launchEvents[len(a.launchEvents)-1]=e
+        a.launchEventsOmitted++
+    }else{a.launchEvents=append(a.launchEvents,e)}
+    a.appendEventLocked(e)
 }
 func (a *ActiveMonitor) setAutoQuarantine(value bool) {
     a.mu.Lock();a.autoQuarantine=value;a.mu.Unlock()
@@ -97,17 +135,23 @@ func (a *ActiveMonitor) addFolder(path string) error {
         for p,stamp:=range baseline {a.seen[p]=stamp}
         a.mu.Unlock()
     }
+    a.wakeWatcher()
     return nil
 }
 func (a *ActiveMonitor) removeFolder(path string) error {
-    a.mu.Lock();defer a.mu.Unlock()
+    a.mu.Lock()
+    removed:=false
     for i,p:=range a.watched {
         if strings.EqualFold(filepath.Clean(p),filepath.Clean(path)){
             a.watched=append(a.watched[:i],a.watched[i+1:]...)
-            return nil
+            removed=true
+            break
         }
     }
-    return errors.New("folder not in watch list")
+    a.mu.Unlock()
+    if !removed {return errors.New("folder not in watch list")}
+    a.wakeWatcher()
+    return nil
 }
 func (a *ActiveMonitor) setEnabled(enabled bool) error {
     a.mu.RLock()
@@ -122,14 +166,16 @@ func (a *ActiveMonitor) setEnabled(enabled bool) error {
     truncated:=false
     if enabled {baseline,truncated=collectActiveFiles(roots)}
     a.mu.Lock()
-    defer a.mu.Unlock()
     if enabled {
         a.seen=baseline
         a.pending=make(map[string]activePending)
         if truncated {a.lastError="Watch enumeration reached the 30,000-file safety limit; some subfolders are not watched."}else{a.lastError=""}
     }
     a.enabled=enabled
+    if !enabled {a.safeLaunch=false}
     a.appendEventLocked(ActiveEvent{At:time.Now(),Action:map[bool]string{true:"enabled",false:"disabled"}[enabled],Reason:"User toggled live protection"})
+    a.mu.Unlock()
+    a.wakeWatcher()
     return nil
 }
 func activeStampOf(info os.FileInfo) activeStamp {return activeStamp{info.Size(),info.ModTime().UnixNano()}}
@@ -163,6 +209,8 @@ func collectActiveFiles(roots []string)(map[string]activeStamp,bool){
     return found,truncated
 }
 func (a *ActiveMonitor) pollOnce() {
+    a.pollMu.Lock()
+    defer a.pollMu.Unlock()
     a.mu.RLock()
     enabled:=a.enabled
     roots:=append([]string{},a.watched...)
@@ -198,9 +246,16 @@ func (a *ActiveMonitor) pollOnce() {
         st,err:=os.Lstat(p)
         if err!=nil||!isCompletedDownloadCandidate(p,st) {continue}
         if activeStampOf(st)!=current[p] {continue}
+        inspectStart:=time.Now()
         f:=a.inspect(p,st)
-        a.mu.Lock();a.inspected++;autoBlock:=a.autoQuarantine;a.mu.Unlock()
-        if f==nil {continue}
+        elapsed:=time.Since(inspectStart).Milliseconds()
+        a.mu.Lock();a.inspected++;autoBlock:=a.autoQuarantine
+        if f==nil {
+            a.appendEventLocked(ActiveEvent{At:time.Now(),Path:p,Action:"clean",Reason:"No heuristic finding in the inspected sample",InspectionMs:elapsed})
+            a.mu.Unlock()
+            continue
+        }
+        a.mu.Unlock()
         action:="flagged"
         reason:=strings.Join(f.Reasons,"; ")
         if autoBlock && f.Score>=110 && f.CanQuarantine && a.vault!=nil {
@@ -214,26 +269,60 @@ func (a *ActiveMonitor) pollOnce() {
         a.mu.Lock()
         a.flagged++
         if action=="quarantined" {a.quarantined++}
-        a.appendEventLocked(ActiveEvent{At:time.Now(),Path:p,Action:action,Score:f.Score,Reason:reason})
+        a.appendEventLocked(ActiveEvent{At:time.Now(),Path:p,Action:action,Score:f.Score,Reason:reason,InspectionMs:elapsed})
         a.mu.Unlock()
     }
 }
+func (a *ActiveMonitor) wakeWatcher() {
+    if a.wake==nil {return}
+    select {case a.wake<-struct{}{}:default:}
+}
 func (a *ActiveMonitor) start() {
-    go func(){
-        ticker:=time.NewTicker(4*time.Second)
+    go func() {
+        // Windows ReadDirectoryChangesW notifications wake the monitor
+        // quickly; full enumeration every 45 seconds also repairs missed
+        // events, watches added folders, and handles overflow gracefully.
+        ticker:=time.NewTicker(45*time.Second)
         defer ticker.Stop()
-        for range ticker.C {
-            func(){defer func(){if err:=recover();err!=nil{
-                log.Printf("active watcher error: %v",err)
-                a.mu.Lock();a.lastError="Watcher had an internal error; see diagnostics log";a.mu.Unlock()
-            }}()
-                a.pollOnce()
-            }()
+        events:=make(chan struct{},1)
+        stopWatch:=func(){}
+        restart:=func(){
+            stopWatch()
+            a.mu.RLock()
+            enabled:=a.enabled
+            roots:=append([]string{},a.watched...)
+            a.mu.RUnlock()
+            if enabled {stopWatch=startFileChangeWatcher(roots,events)} else {stopWatch=func(){}}
+        }
+        restart()
+        for {
+            select {
+            case <-a.wake:
+                restart()
+            case <-events:
+                // Two passes spaced apart prevent inspecting a file while
+                // the browser is still writing it.
+                time.Sleep(1200*time.Millisecond)
+                a.pollProtected()
+                time.Sleep(2200*time.Millisecond)
+                a.pollProtected()
+            case <-ticker.C:
+                a.pollProtected()
+                time.Sleep(2200*time.Millisecond)
+                a.pollProtected()
+            }
         }
     }()
 }
+func (a *ActiveMonitor) pollProtected() {
+    defer func(){if err:=recover();err!=nil{
+        log.Printf("active watcher error: %v",err)
+        a.mu.Lock();a.lastError="Watcher had an internal error; see diagnostics log";a.mu.Unlock()
+    }}()
+    a.pollOnce()
+}
 func (a *ActiveMonitor) clearHistory(){
-    a.mu.Lock();a.events=nil;a.inspected=0;a.flagged=0;a.quarantined=0;a.mu.Unlock()
+    a.mu.Lock();a.events=nil;a.launchEvents=nil;a.eventsOmitted=0;a.launchEventsOmitted=0;a.launchChecks=0;a.launchApproved=0;a.launchDenied=0;a.inspected=0;a.flagged=0;a.quarantined=0;a.mu.Unlock()
 }
 func (a *ActiveMonitor) summaryText() string {
     s:=a.snapshot()

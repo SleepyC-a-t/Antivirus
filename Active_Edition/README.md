@@ -1,6 +1,6 @@
-# SentinelGuard 4.0 — integrated Windows desktop security center
+# SentinelGuard 4.1 — integrated Windows desktop security center
 
-SentinelGuard 4.0 combines the existing manual scanner and its experimental
+SentinelGuard 4.1 combines the existing manual scanner and its experimental
 opt-in Active monitor into **one Windows desktop application**. The dashboard
 runs inside a native Windows WebView2 window (Microsoft Edge WebView2 Runtime)
 rather than a tab in Firefox, Chrome or Edge.
@@ -8,7 +8,7 @@ rather than a tab in Firefox, Chrome or Edge.
 ## Starting SentinelGuard
 
 1. Extract the full ZIP.
-2. Start `SentinelGuard-4.0.exe`. No separate server, browser or Python is
+2. Start `SentinelGuard-4.1.exe`. No separate server, browser or Python is
    needed on your Windows PC. Windows 10/11 must have Microsoft Edge WebView2
    Runtime installed.
 3. **Live protection is OFF by default on EVERY launch.** Manual scans,
@@ -77,3 +77,45 @@ Redact these before sharing publicly.
 **Development:** Python is used only by CI to regenerate Claude's inert
 test fixtures in a temporary directory. No Python interpreter or test
 corpus is included in the production application.
+
+## Changes in 4.1
+
+- **Live download watcher:** Windows ReadDirectoryChangesW events with periodic
+  reconciliation, 2-stage settle checks, and recent clean/flagged file events.
+  This is user-mode monitoring **after file writes**, not OS-wide blocking.
+- **Opt-in Scan & Run (OFF by default):** select a local .exe in the app,
+  inspect it first, and show a native Windows warning if static heuristics
+  identify suspicious indicators. **No** is the default warning choice.
+  The file hash is rechecked after confirmation. This applies ONLY to files
+  deliberately launched through SentinelGuard's Scan & Run button, not
+  normal Explorer double clicks, UAC launches, services or other apps.
+  Neither a clean verdict nor hash rechecking guarantees safety.
+- **Launch audit:** decisions, file paths, heuristic scores, approval/denial,
+  and launch failures appear under `status.launchEvents` in the Live JSON
+  and `liveProtection.launchEvents` in the combined scan report.
+- **Browser URL blocking:** capped DNR urlFilter rules instead of 1,200
+  regex rules; safe query-parameter variations handled for feed entries
+  without existing query strings. On failed list updates, previously working
+  blocking rules are retained instead of erased.
+- **Remembered browser pairing:** encrypted per-user with Windows DPAPI,
+  stable randomized loopback port when available, HMAC nonce challenge
+  (the secret is never sent in HTTP requests) and a Revoke Pairing button.
+  If the saved port is unavailable, temporary pairing is used and the
+  extension must be re-paired after restarting. Live protection is STILL
+  OFF on every launch, including with remembered pairing.
+- **Independent testing:** an opt-in, hash-verified holdout evaluator is
+  documented in `INDEPENDENT_TESTING.txt`. Until externally labeled data
+  are supplied, we do not claim a real-world detection rate.
+- **Trust:** SHA256SUMS.txt accompanies each build. This development build
+  remains unsigned; an optional reviewed-main manual signing workflow can
+  produce an Authenticode-signed release only after you supply a legitimate
+  certificate through protected GitHub environment secrets.
+
+**Privacy:** launch events include local executable paths and reasons. The
+browser pairing secret is NOT included in exported reports. Redact exported
+paths before sharing. Keep Bitdefender or Defender enabled.
+
+**Event retention:** The in-memory dashboard and exported Live JSON retain the
+latest 300 general events and the latest 120 launch decisions. The report
+includes `eventsOmitted` and `launchEventsOmitted` counters for records
+that aged out. This is not a persistent, tamper-proof system audit log.
