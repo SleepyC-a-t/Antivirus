@@ -13,6 +13,8 @@ import (
 	"os"
 	"path/filepath"
     "strings"
+    "fmt"
+    "sync"
 	"sync/atomic"
 	"time"
 )
@@ -26,7 +28,11 @@ var edition = "integrated" // v4.0 combines manual and opt-in live scanning
 
 type Server struct {
     active *ActiveMonitor
-    extensionToken string // read-only browser companion credential
+    extensionToken string // protected by extensionMu
+    extensionMu sync.RWMutex
+    pairingPath string
+    pairingPersistent bool
+    pairingConfig BrowserPairConfig
 	app     *App
 	token   string
 	address string
@@ -34,6 +40,23 @@ type Server struct {
 	pickingFolder atomic.Bool
 }
 
+func (s *Server) getBrowserToken() string {
+    s.extensionMu.RLock()
+    defer s.extensionMu.RUnlock()
+    return s.extensionToken
+}
+func (s *Server) setBrowserToken(value string) {
+    s.extensionMu.Lock()
+    s.extensionToken=value
+    s.extensionMu.Unlock()
+}
+func validBrowserNonce(s string) bool {
+    if len(s)<20||len(s)>80 {return false}
+    for _,c:=range s {
+        if !(c>='A'&&c<='Z'||c>='a'&&c<='z'||c>='0'&&c<='9'||c=='_'||c=='-'){return false}
+    }
+    return true
+}
 func sendJSON(w http.ResponseWriter, val any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
@@ -81,7 +104,7 @@ func (s *Server) secure(next http.Handler) http.Handler {
             }
             w.Header().Set("Access-Control-Allow-Origin",o)
             w.Header().Set("Vary","Origin")
-            w.Header().Set("Access-Control-Allow-Headers","X-Sentinel-Token")
+            w.Header().Set("Access-Control-Allow-Headers","X-Sentinel-Nonce")
             w.Header().Set("Access-Control-Allow-Methods","GET, OPTIONS")
             if r.Method == http.MethodOptions {w.WriteHeader(http.StatusNoContent);return}
         }
@@ -90,8 +113,14 @@ func (s *Server) secure(next http.Handler) http.Handler {
 			t = r.URL.Query().Get("token")
 		}
 		authorized:=subtle.ConstantTimeCompare([]byte(t),[]byte(s.token))==1
-        if !authorized && (edition=="active"||edition=="integrated") && r.URL.Path=="/api/active/extension-status" {
-            authorized=s.extensionToken!=""&&subtle.ConstantTimeCompare([]byte(t),[]byte(s.extensionToken))==1
+        // Browser extensions prove their local pairing with a nonce/HMAC
+        // challenge. The pairing secret itself is NEVER sent to localhost.
+        if !authorized && (edition=="active"||edition=="integrated") &&
+            r.URL.Path=="/api/active/extension-status" && r.Method==http.MethodGet &&
+            validBrowserNonce(r.Header.Get("X-Sentinel-Nonce")) {
+            origin:=r.Header.Get("Origin")
+            authorized=strings.HasPrefix(origin,"moz-extension://")||
+                strings.HasPrefix(origin,"chrome-extension://")
         }
         if !authorized {
             http.Error(w,"access token required",403);return
@@ -123,7 +152,7 @@ func (s *Server) routes() http.Handler {
 	})
 	mux.HandleFunc("/api/snapshot", func(w http.ResponseWriter, r *http.Request) {
 		status, fs := s.app.snapshot()
-		sendJSON(w, map[string]any{"status": status, "findings": fs, "product": map[string]any{"name":"SentinelGuard","version":"4.0", "type":"manual and optional live-protection scanner","activeEdition":s.active!=nil,"desktop":true}})
+		sendJSON(w, map[string]any{"status": status, "findings": fs, "product": map[string]any{"name":"SentinelGuard","version":"4.1", "type":"manual and optional live-protection scanner","activeEdition":s.active!=nil,"desktop":true}})
 	})
 	mux.HandleFunc("/api/choose-folder", func(w http.ResponseWriter, r *http.Request) {
         if !requirePost(w, r) { return }
@@ -385,8 +414,8 @@ func (s *Server) routes() http.Handler {
 		st, fs := s.app.snapshot()
 		skippedPaths := s.app.skippedSnapshot()
 		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Content-Disposition", `attachment; filename="SentinelGuard_v4.0_Report.json"`)
-		report:=map[string]any{"product": "SentinelGuard", "version": "4.0", "exportedAt": time.Now(), "status": st, "findings": fs, "skippedPaths": skippedPaths, "notice": "These findings may be false positives. Defender scans are separate from heuristic scans."}
+		w.Header().Set("Content-Disposition", `attachment; filename="SentinelGuard_v4.1_Report.json"`)
+		report:=map[string]any{"product": "SentinelGuard", "version": "4.1", "exportedAt": time.Now(), "status": st, "findings": fs, "skippedPaths": skippedPaths, "notice": "These findings may be false positives. Defender scans are separate from heuristic scans."}
         if s.active!=nil {report["liveProtection"]=s.active.snapshot()}
         sendJSON(w,report)
 	})
@@ -422,7 +451,18 @@ func main() {
 		log.Fatal(err)
 	}
 	token := base64.RawURLEncoding.EncodeToString(rnd)
-	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+    pairConfig, pairErr := loadOrCreateBrowserPairing("")
+    pairPersistent:=pairErr==nil && pairingValid(pairConfig)
+    address:="127.0.0.1:0"
+    if pairPersistent {address=fmt.Sprintf("127.0.0.1:%d",pairConfig.Port)}
+	listener, err := net.Listen("tcp4", address)
+    if err!=nil && pairPersistent {
+        // Port may be held by another process; do not send persistent
+        // credentials to its service. Fall back to an ephemeral port/key.
+        log.Printf("Browser pairing port unavailable: %v; temporary re-pair required",err)
+        pairPersistent=false
+        listener,err=net.Listen("tcp4","127.0.0.1:0")
+    }
 	if err != nil {
 		reportStartupError(err.Error())
 		log.Fatal(err)
@@ -430,9 +470,17 @@ func main() {
 	server := &Server{app: newApp(vault), token: token, address: listener.Addr().String()}
     if edition=="integrated" || edition=="active" {
         server.active=newActiveMonitor(vault)
-        browserSecret:=make([]byte,32)
-        if _,err:=rand.Read(browserSecret);err!=nil {log.Fatal(err)}
-        server.extensionToken=base64.RawURLEncoding.EncodeToString(browserSecret)
+        server.pairingPersistent=pairPersistent
+        server.pairingPath=pairingFilePath()
+        if pairPersistent {
+            server.pairingConfig=pairConfig
+            server.extensionToken=pairConfig.Secret
+        }else{
+            if pairErr!=nil {log.Printf("Persistent browser pairing unavailable: %v",pairErr)}
+            browserSecret:=make([]byte,32)
+            if _,err:=rand.Read(browserSecret);err!=nil {log.Fatal(err)}
+            server.extensionToken=base64.RawURLEncoding.EncodeToString(browserSecret)
+        }
         server.active.start()
     }
 	url := "http://" + server.address + "/app/?token=" + token

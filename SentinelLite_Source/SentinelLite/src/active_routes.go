@@ -16,12 +16,17 @@ func registerActiveRoutes(mux *http.ServeMux,s *Server){
         if r.Method!=http.MethodGet{http.Error(w,"GET required",405);return}
         // Browser pairings are *read-only*. They cannot toggle scanning,
         // request quarantine, delete files or control the local application.
-        sendJSON(w,map[string]any{"pairing":"http://"+s.address+"/api/active/extension-status?pair="+s.extensionToken})
+        sendJSON(w,map[string]any{"pairing":"http://"+s.address+"/api/active/extension-status?pair="+s.getBrowserToken(),"persistent":s.pairingPersistent})
     })
     mux.HandleFunc("/api/active/extension-status",func(w http.ResponseWriter,r *http.Request){
         if r.Method!=http.MethodGet{http.Error(w,"GET required",405);return}
+        nonce:=r.Header.Get("X-Sentinel-Nonce")
+        if !validBrowserNonce(nonce){apiError(w,400,errors.New("missing or invalid browser challenge"));return}
         snap:=s.active.snapshot()
-        sendJSON(w,map[string]any{"enabled":snap.Enabled,"edition":"SentinelGuard 4.1","paired":true,"browserProtectionNote":"The extension blocks exact addresses listed by the opted-in phishing feed; it cannot examine web page content or all HTTPS traffic."})
+        sendJSON(w,map[string]any{"enabled":snap.Enabled,"edition":"SentinelGuard 4.1",
+            "nonce":nonce,"signature":signBrowserState(s.getBrowserToken(),nonce,snap.Enabled),
+            "paired":true,"persistent":s.pairingPersistent,
+            "browserProtectionNote":"The extension blocks matched phishing URLs, not all malicious activity."})
     })
     mux.HandleFunc("/api/active/safe-launch-toggle",func(w http.ResponseWriter,r *http.Request){
         if !requirePost(w,r){return}
@@ -50,6 +55,21 @@ func registerActiveRoutes(mux *http.ServeMux,s *Server){
         result,err:=s.active.safeLaunchProgram(req.Path,confirmProgramLaunch,nil)
         if err!=nil{apiError(w,400,err);return}
         sendJSON(w,result)
+    })
+    mux.HandleFunc("/api/active/revoke-browser",func(w http.ResponseWriter,r *http.Request){
+        if !requirePost(w,r){return}
+        if !s.pairingPersistent {
+            fresh,err:=generateBrowserPairConfig()
+            if err!=nil{apiError(w,500,err);return}
+            s.setBrowserToken(fresh.Secret)
+            sendJSON(w,map[string]any{"revoked":true,"persistent":false})
+            return
+        }
+        cfg,err:=rotateBrowserPairing(s.pairingPath,s.pairingConfig)
+        if err!=nil{apiError(w,500,err);return}
+        s.pairingConfig=cfg
+        s.setBrowserToken(cfg.Secret)
+        sendJSON(w,map[string]any{"revoked":true,"persistent":true})
     })
     mux.HandleFunc("/api/active/toggle",func(w http.ResponseWriter,r *http.Request){
         if !requirePost(w,r){return}
