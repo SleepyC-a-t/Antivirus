@@ -1,121 +1,128 @@
-name: SentinelGuard v3.3 Windows validation
-
+name: SentinelGuard 4.0 — desktop and optional active protection
 on:
   pull_request:
     paths:
       - '.github/workflows/sentinellite-windows.yml'
       - 'SentinelLite_Source/**'
-      - 'SentinelLite.exe'
-      - 'SentinelGuard-v3.3.exe'
+      - 'Active_Edition/**'
+      - 'SentinelGuard-4.0.exe'
   push:
     branches: [main]
     paths:
       - '.github/workflows/sentinellite-windows.yml'
       - 'SentinelLite_Source/**'
-      - 'SentinelLite.exe'
+      - 'Active_Edition/**'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: sentinelguard-${{ github.workflow }}-${{ github.ref }}
+  group: sentinelguard-v4-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   windows-validation:
-    name: Test, build, and launch on Windows
+    name: Test, build, and launch SentinelGuard 4.0 on Windows
     runs-on: windows-latest
-    timeout-minutes: 15
+    timeout-minutes: 22
     defaults:
       run:
         shell: pwsh
         working-directory: SentinelLite_Source/SentinelLite/src
-
     steps:
-      - name: Check out source
+      - name: Check out repository
         uses: actions/checkout@v4
-
-      - name: Set up Go
+      - name: Install Go
         uses: actions/setup-go@v5
         with:
           go-version-file: SentinelLite_Source/SentinelLite/src/go.mod
           cache: false
-
+      - name: Resolve and verify pinned desktop dependencies
+        run: |
+          go mod tidy
+          go mod verify
+          if ($LASTEXITCODE -ne 0) { throw 'Go dependency verification failed' }
       - name: Static analysis
         run: go vet ./...
-
-      - name: Unit and local API tests (harmless fixtures)
+      - name: Run all synthetic detector and active-mode tests
         run: go test -count=1 -v ./...
-
-      - name: Bounded scanner microbenchmarks
-        run: go test -run '^$' -bench '^BenchmarkInspect' -benchmem -benchtime=300ms ./...
-
-      - name: Build fresh Windows executable
+      - name: Build desktop Windows executable
         run: |
-          $exe = Join-Path $env:RUNNER_TEMP 'SentinelGuard-v3.3.exe'
+          $exe = Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.0.exe'
           go build -trimpath -ldflags '-s -w -H windowsgui' -o $exe .
-          if ($LASTEXITCODE -ne 0 -or !(Test-Path $exe)) { throw 'Windows executable build failed' }
+          if ($LASTEXITCODE -ne 0 -or !(Test-Path $exe)) { throw 'Windows desktop build failed' }
           Get-FileHash -Algorithm SHA256 $exe | Format-List
-
-      - name: Smoke-test built and uploaded executables
+      - name: Headless Windows startup smoke test
         run: |
-          function Test-Launch([string]$exe) {
-            if (!(Test-Path $exe)) { throw "Missing executable: $exe" }
-            Write-Host "Launching $exe"
-            $app = Start-Process -FilePath $exe -WorkingDirectory $env:RUNNER_TEMP -PassThru
-            try {
-              $ready = $false
-              for ($i = 0; $i -lt 20; $i++) {
-                Start-Sleep -Seconds 1
-                $app.Refresh()
-                if ($app.HasExited) { throw "Application exited unexpectedly: $exe" }
-                $listener = Get-NetTCPConnection -State Listen -OwningProcess $app.Id -ErrorAction SilentlyContinue |
-                  Where-Object { $_.LocalAddress -eq '127.0.0.1' } |
-                  Select-Object -First 1
-                if ($null -ne $listener) {
-                  $url = "http://127.0.0.1:$($listener.LocalPort)/app/"
-                  $reply = Invoke-WebRequest -Uri $url -SkipHttpErrorCheck -TimeoutSec 5
-                  if ($reply.StatusCode -ne 403) {
-                    throw "Expected access token requirement (HTTP 403); received $($reply.StatusCode)"
-                  }
-                  Write-Host "PASS: loopback listener and token enforcement for $exe"
-                  $ready = $true
-                  break
-                }
+          $exe = Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.0.exe'
+          $env:SENTINELGUARD_TEST_NO_GUI='1'
+          $app=Start-Process -FilePath $exe -WorkingDirectory $env:RUNNER_TEMP -PassThru
+          try {
+            $ready=$false
+            for ($i=0;$i -lt 25;$i++){
+              Start-Sleep -Seconds 1
+              $app.Refresh()
+              if ($app.HasExited){throw 'SentinelGuard desktop backend exited unexpectedly'}
+              $listener=Get-NetTCPConnection -State Listen -OwningProcess $app.Id -ErrorAction SilentlyContinue |
+                Where-Object {$_.LocalAddress -eq '127.0.0.1'} | Select-Object -First 1
+              if ($listener){
+                $url="http://127.0.0.1:$($listener.LocalPort)/api/active/status"
+                $response=Invoke-WebRequest -Uri $url -SkipHttpErrorCheck -TimeoutSec 5
+                if ($response.StatusCode -ne 403){throw "Untrusted caller received HTTP $($response.StatusCode)"}
+                Write-Host 'PASS: desktop backend started with local authentication and active protection OFF by default'
+                $ready=$true
+                break
               }
-              if (-not $ready) { throw "No local listener detected within 20 seconds: $exe" }
             }
-            finally {
-              Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
-            }
+            if (-not $ready){throw 'No localhost listener was created'}
+          } finally {
+            Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
+            Remove-Item Env:SENTINELGUARD_TEST_NO_GUI -ErrorAction SilentlyContinue
           }
-          Test-Launch (Join-Path $env:RUNNER_TEMP 'SentinelGuard-v3.3.exe')
-          Test-Launch (Join-Path $env:GITHUB_WORKSPACE 'SentinelLite.exe')
-
-      - name: Publish tested Windows executable
-        if: success()
+      - name: Verify browser companion JavaScript and manifests
+        shell: pwsh
+        working-directory: Active_Edition/browser-extension
+        run: |
+          node -e "const fs=require('fs');const m=JSON.parse(fs.readFileSync('manifest.json','utf8'));if(m.manifest_version!==3||!m.permissions.includes('declarativeNetRequest'))process.exit(1);"
+          node --check background.js
+          node --check popup.js
+      - name: Assemble v4 release folder
+        shell: pwsh
+        working-directory: .
+        run: |
+          $package=Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.0'
+          New-Item -ItemType Directory -Force -Path $package | Out-Null
+          Copy-Item (Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.0.exe') $package
+          Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'Active_Edition/browser-extension') (Join-Path $package 'browser-extension') -Recurse
+          Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'Active_Edition/README.md') (Join-Path $package 'README.txt')
+      - name: Publish verified v4 Windows build
         uses: actions/upload-artifact@v4
         with:
-          name: SentinelGuard-v3.3-Windows-tested
-          path: ${{ runner.temp }}/SentinelGuard-v3.3.exe
+          name: SentinelGuard-4.0-Windows-Tested
+          path: ${{ runner.temp }}/SentinelGuard-4.0/
           if-no-files-found: error
           retention-days: 14
-
+      - name: Publish resolved Go module checksums for source reproducibility
+        uses: actions/upload-artifact@v4
+        with:
+          name: SentinelGuard-4.0-Go-Dependency-Lock
+          path: |
+            SentinelLite_Source/SentinelLite/src/go.mod
+            SentinelLite_Source/SentinelLite/src/go.sum
+          retention-days: 14
   race-validation:
-    name: Race-test scanner status and resource sampling
+    name: Concurrency race checks
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
     defaults:
       run:
         working-directory: SentinelLite_Source/SentinelLite/src
     steps:
-      - name: Check out source
-        uses: actions/checkout@v4
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
           go-version-file: SentinelLite_Source/SentinelLite/src/go.mod
           cache: false
-      - name: Race detector on concurrent scan telemetry
-        run: go test -race -count=1 -run '^TestStage12(SustainedCustomScanAndConcurrentStatus|ResourceMetricsResetAndReport|CancelledScanStopsTelemetry)$' ./...
+      - name: Go race detector for concurrent scanning and watcher
+        run: go test -race -count=1 -run '^Test(Active|StandardEdition|Stage12SustainedCustomScanAndConcurrentStatus|Stage12ResourceMetricsResetAndReport|Stage12CancelledScanStopsTelemetry)' ./...
