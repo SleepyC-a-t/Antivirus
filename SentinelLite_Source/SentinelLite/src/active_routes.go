@@ -1,6 +1,7 @@
 package main
 
 import(
+    "fmt"
     "net/http"
     "time"
 )
@@ -16,17 +17,21 @@ func registerActiveRoutes(mux *http.ServeMux,s *Server){
         // Browser pairings are *read-only*. They cannot toggle scanning,
         // request quarantine, delete files or control the local application.
         pair,persisted:=s.pairSnapshot()
-        sendJSON(w,map[string]any{"pairing":"http://"+s.address+"/api/active/extension-status?pair="+pair,"persistent":persisted})
+        sendJSON(w,map[string]any{"pairing":"http://"+s.address+"/api/active/extension-challenge?pair="+pair,"persistent":persisted})
     })
     mux.HandleFunc("/api/active/browser-revoke",func(w http.ResponseWriter,r *http.Request){
         if !requirePost(w,r){return}
         if err:=s.updatePairToken();err!=nil{apiError(w,http.StatusInternalServerError,err);return}
         sendJSON(w,map[string]any{"revoked":true,"note":"Previous extension pairing is now invalid."})
     })
-    mux.HandleFunc("/api/active/extension-status",func(w http.ResponseWriter,r *http.Request){
+    mux.HandleFunc("/api/active/extension-challenge",func(w http.ResponseWriter,r *http.Request){
         if r.Method!=http.MethodGet{http.Error(w,"GET required",405);return}
+        nonce:=r.URL.Query().Get("nonce")
+        if !browserChallengeNonce.MatchString(nonce){apiError(w,400,fmt.Errorf("invalid challenge nonce"));return}
         snap:=s.active.snapshot()
-        sendJSON(w,map[string]any{"enabled":snap.Enabled,"edition":"SentinelGuard 4.1","paired":true,"browserProtectionNote":"The extension blocks exact addresses listed by the opted-in phishing feed; it cannot examine web page content or all HTTPS traffic."})
+        mac:=s.browserChallengeMAC(nonce,snap.Enabled)
+        if mac==""{apiError(w,503,fmt.Errorf("browser credential unavailable"));return}
+        sendJSON(w,map[string]any{"enabled":snap.Enabled,"edition":"SentinelGuard 4.2","nonce":nonce,"mac":mac})
     })
     mux.HandleFunc("/api/active/toggle",func(w http.ResponseWriter,r *http.Request){
         if !requirePost(w,r){return}
@@ -70,7 +75,7 @@ func registerActiveRoutes(mux *http.ServeMux,s *Server){
     })
     mux.HandleFunc("/api/active/report",func(w http.ResponseWriter,r *http.Request){
         if r.Method!=http.MethodGet{http.Error(w,"GET required",405);return}
-        w.Header().Set("Content-Disposition",`attachment; filename="SentinelGuard_v4.1_Live_Report.json"`)
-        sendJSON(w,map[string]any{"product":"SentinelGuard 4.1","version":"4.1","exportedAt":time.Now(),"status":s.active.snapshot(),"privacy":"Contains absolute file paths, scan detection reasons and local timestamps. No internet history, passwords, cookies or uploaded file contents."})
+        w.Header().Set("Content-Disposition",`attachment; filename="SentinelGuard_v4.2_Live_Report.json"`)
+        sendJSON(w,map[string]any{"product":"SentinelGuard 4.2","version":"4.2","exportedAt":time.Now(),"status":s.active.snapshot(),"privacy":"Contains absolute file paths, scan detection reasons and local timestamps. No internet history, passwords, cookies or uploaded file contents."})
     })
 }

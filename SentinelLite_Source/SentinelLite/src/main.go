@@ -2,9 +2,13 @@ package main
 
 import (
 	"crypto/rand"
+    "crypto/hmac"
+    "crypto/sha256"
 	"crypto/subtle"
 	"embed"
 	"encoding/base64"
+    "regexp"
+    "strconv"
 	"encoding/json"
 	"errors"
 	"log"
@@ -23,7 +27,7 @@ var pages embed.FS
 
 // Built separately with -ldflags '-X main.edition=active'. The standard
 // SentinelGuard executable retains its existing on-demand behavior.
-var edition = "integrated" // v4.1 combines manual and opt-in live scanning
+var edition = "integrated" // v4.2 combines manual and opt-in live scanning
 
 type Server struct {
     active *ActiveMonitor
@@ -40,6 +44,61 @@ type Server struct {
 	pickingFolder atomic.Bool
 }
 
+var browserChallengeNonce=regexp.MustCompile(`^[A-Za-z0-9_-]{32,64}package main
+
+import (
+	"crypto/rand"
+    "crypto/hmac"
+    "crypto/sha256"
+	"crypto/subtle"
+	"embed"
+	"encoding/base64"
+    "regexp"
+    "strconv"
+	"encoding/json"
+	"errors"
+	"log"
+	"net"
+	"net/http"
+	"os"
+	"path/filepath"
+    "strings"
+    "sync"
+	"sync/atomic"
+	"time"
+)
+
+//go:embed ui.html
+var pages embed.FS
+
+// Built separately with -ldflags '-X main.edition=active'. The standard
+// SentinelGuard executable retains its existing on-demand behavior.
+var edition = "integrated" // v4.2 combines manual and opt-in live scanning
+
+type Server struct {
+    active *ActiveMonitor
+    extensionToken string // read-only browser companion credential
+    pairMu sync.RWMutex
+    launchMu sync.Mutex
+    launchTickets map[string]launchTicket
+    launchRunner func(string) error
+    pairPersisted bool
+	app     *App
+	token   string
+	address string
+	folderPicker func() (string, error) // optional test override
+	pickingFolder atomic.Bool
+}
+
+)
+func (s *Server) browserChallengeMAC(nonce string,enabled bool) string {
+    key,_:=s.pairSnapshot()
+    raw,err:=base64.RawURLEncoding.DecodeString(key)
+    if err!=nil||len(raw)!=32{return ""}
+    mac:=hmac.New(sha256.New,raw)
+    mac.Write([]byte("SG4.2|"+nonce+"|"+strconv.FormatBool(enabled)+"|SentinelGuard 4.2"))
+    return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
 func (s *Server) pairSnapshot()(string,bool) {
  s.pairMu.RLock();defer s.pairMu.RUnlock()
  return s.extensionToken,s.pairPersisted
@@ -90,7 +149,7 @@ func (s *Server) secure(next http.Handler) http.Handler {
 			return
 		}
 		if o := r.Header.Get("Origin"); o != "" && o != "http://"+s.address {
-            allowExtension := (edition=="integrated"||edition=="active") && r.URL.Path=="/api/active/extension-status" &&
+            allowExtension := (edition=="integrated"||edition=="active") && r.URL.Path=="/api/active/extension-challenge" &&
                 (strings.HasPrefix(o,"moz-extension://") || strings.HasPrefix(o,"chrome-extension://"))
             if !allowExtension {
                 http.Error(w,"invalid origin",403);return
@@ -106,11 +165,14 @@ func (s *Server) secure(next http.Handler) http.Handler {
 			t = r.URL.Query().Get("token")
 		}
 		authorized:=subtle.ConstantTimeCompare([]byte(t),[]byte(s.token))==1
-        if !authorized && (edition=="active"||edition=="integrated") && r.URL.Path=="/api/active/extension-status" {
-            authorized=func()bool{
-                pair,_:=s.pairSnapshot()
-                return pair!=""&&subtle.ConstantTimeCompare([]byte(t),[]byte(pair))==1
-            }()
+        if !authorized && (edition=="active"||edition=="integrated") &&
+            r.URL.Path=="/api/active/extension-challenge" &&
+            r.Method==http.MethodGet &&
+            browserChallengeNonce.MatchString(r.URL.Query().Get("nonce")) {
+            // The extension never transmits its raw shared secret to a
+            // possibly spoofed localhost process. A fresh nonce binds the
+            // authenticated response; only the real app knows the DPAPI key.
+            authorized=true
         }
         if !authorized {
             http.Error(w,"access token required",403);return
@@ -404,8 +466,8 @@ func (s *Server) routes() http.Handler {
 		st, fs := s.app.snapshot()
 		skippedPaths := s.app.skippedSnapshot()
 		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Content-Disposition", `attachment; filename="SentinelGuard_v4.1_Report.json"`)
-		report:=map[string]any{"product": "SentinelGuard", "version": "4.1", "exportedAt": time.Now(), "status": st, "findings": fs, "skippedPaths": skippedPaths, "notice": "These findings may be false positives. Defender scans are separate from heuristic scans."}
+		w.Header().Set("Content-Disposition", `attachment; filename="SentinelGuard_v4.2_Report.json"`)
+		report:=map[string]any{"product": "SentinelGuard", "version": "4.2", "exportedAt": time.Now(), "status": st, "findings": fs, "skippedPaths": skippedPaths, "notice": "These findings may be false positives. Defender scans are separate from heuristic scans."}
         if s.active!=nil {report["liveProtection"]=s.active.snapshot()}
         sendJSON(w,report)
 	})
