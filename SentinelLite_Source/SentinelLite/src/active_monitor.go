@@ -58,14 +58,14 @@ func newActiveMonitor(vault *Vault) *ActiveMonitor {
     if stat,err:=os.Lstat(downloads);err==nil&&stat.IsDir()&&!isReparse(downloads) {
         folders=append(folders,downloads)
     }
-    return &ActiveMonitor{watched:folders,seen:make(map[string]activeStamp),pending:make(map[string]activePending),vault:vault,autoQuarantine:true,inspect:func(p string,st os.FileInfo)*Finding{return inspectFileProtected(p,st,nil)}}
+    return &ActiveMonitor{watched:folders,seen:make(map[string]activeStamp),pending:make(map[string]activePending),vault:vault,autoQuarantine:false,inspect:func(p string,st os.FileInfo)*Finding{return inspectFileProtected(p,st,nil)}}
 }
 func (a *ActiveMonitor) snapshot() ActiveStatus {
     a.mu.RLock();defer a.mu.RUnlock()
-    out:=ActiveStatus{Edition:"SentinelGuard Active 0.1",Enabled:a.enabled,AutoQuarantine:a.autoQuarantine,
+    out:=ActiveStatus{Edition:"SentinelGuard 4.0",Enabled:a.enabled,AutoQuarantine:a.autoQuarantine,
         WatchedFolders:append([]string{},a.watched...),Inspected:a.inspected,Flagged:a.flagged,
         Quarantined:a.quarantined,LastError:a.lastError,Events:append([]ActiveEvent{},a.events...),
-        Notice:"Near-real-time, user-mode monitoring of configured folders. New/changed files are inspected after download completion, not before execution. Only high-confidence findings (score >=110) are auto-quarantined when enabled. Website protection requires the optional paired browser extension; Bitdefender/Defender remain primary protection."}
+        Notice:"Near-real-time, user-mode monitoring of configured folders. New/changed files are inspected after download completion, not before execution. Only high-confidence findings (score >=110) are auto-quarantined when the user separately opts in. Website protection requires the optional paired browser extension; Bitdefender/Defender remain primary protection."}
     return out
 }
 func (a *ActiveMonitor) appendEventLocked(e ActiveEvent) {
@@ -220,7 +220,7 @@ func (a *ActiveMonitor) pollOnce() {
 }
 func (a *ActiveMonitor) start() {
     go func(){
-        ticker:=time.NewTicker(3*time.Second)
+        ticker:=time.NewTicker(4*time.Second)
         defer ticker.Stop()
         for range ticker.C {
             func(){defer func(){if err:=recover();err!=nil{

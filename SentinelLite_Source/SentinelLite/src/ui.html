@@ -51,7 +51,7 @@ button{background:#203149;border:1px solid #39516b;color:#dce7f9;padding:10px 14
 <body>
 <div class="wrap">
  <header class="top"><div class="brand"><div class="mark">◆</div><div><h1>SentinelGuard <span style="font-size:10px;font-weight:600;color:var(--accent);vertical-align:top">v3.3</span></h1><small>On-demand threat investigation · Windows 10 / 11</small></div></div><div class="top-actions"><span class="tag">● Local-only · No uploads</span><button class="outline" id="windowsSecurity">Open Windows Security</button><button class="outline" id="exit">Exit application</button></div></header>
- <section class="hero"><span class="eyebrow">SENTINELGUARD v3.3 · ADVISORY SCANNER</span><h2>Inspect first. Decide what happens next.</h2><p>Scan your PC for suspicious files, inspect the reasons and locations, then approve individual quarantines. Rule matches are evidence for human review, not a malware verdict. Microsoft Defender provides a separate signature-based check.</p></section>
+ <section class="hero"><span class="eyebrow">SENTINELGUARD 4.0 · DESKTOP SECURITY CENTER</span><h2>Inspect first. Decide what happens next.</h2><p>One security center for on-demand scanning and optional download protection. Your live shield starts <strong>OFF</strong>. Heuristic findings are evidence for review, not proof of infection. Keep your main antivirus enabled.</p></section>
  <div class="shell">
   <aside><div class="panel"><h3>Configure a scan</h3><p class="section-desc">Choose a scanning engine and the areas to inspect. Nothing is quarantined automatically by SentinelGuard.</p>
     <div class="control-label">Scanning engine</div>
@@ -68,13 +68,13 @@ button{background:#203149;border:1px solid #39516b;color:#dce7f9;padding:10px 14
    </div></aside>
   <main>
     <section id="activeProtectionPanel" class="active-panel hide" aria-label="Live file protection">
-      <div class="active-heading"><div><div class="eyebrow">SENTINELGUARD ACTIVE · EXPERIMENTAL</div><h2>Download protection <span id="activeState" class="active-bad">OFF</span></h2>
-      <p class="active-sub">App must remain running. Only configured folders are watched. This is not a kernel real-time antivirus.</p></div>
+      <div class="active-heading"><div><div class="eyebrow">LIVE PROTECTION · OPTIONAL</div><h2>Download protection <span id="activeState" class="active-bad">OFF</span></h2>
+      <p class="active-sub">OFF by default. Monitors selected folders while this application is open. It does not intercept file execution or network traffic.</p></div>
       <button class="primary" id="activeToggle">Turn protection ON</button></div>
       <div class="active-stats"><div><small>New/changed files checked</small><b id="activeInspected">0</b></div>
         <div><small>Flagged for review</small><b id="activeFlagged">0</b></div>
         <div><small>High-confidence quarantined</small><b id="activeBlocked">0</b></div></div>
-      <div class="active-options"><label><input type="checkbox" id="activeAutoBlock" checked> Automatically quarantine high-confidence downloads (score ≥ 110 only)</label>
+      <div class="active-options"><label><input type="checkbox" id="activeAutoBlock"> Allow auto-quarantine for high-confidence downloads (score ≥ 110 only)</label>
       <p class="active-sub">Review-level findings are never automatically quarantined. There is a delay after a download finishes; do not open untrusted files before your main antivirus scans them.</p></div>
       <div class="active-options"><b>Folders monitored:</b><div id="activeWatchedFolders" class="active-watch">Not configured</div>
       <div class="active-btns"><button class="outline" id="activeAddFolder">Add folder…</button><button class="outline" id="activeRemoveFolder">Remove folder…</button></div></div>
@@ -165,7 +165,7 @@ function renderStatus(){
 async function refresh(){
  try{
   let j=await api('/api/snapshot');state.connectionLosses=0;state.status=j.status;state.findings=j.findings||[];
-  if(j.product?.activeEdition){document.querySelector('#activeProtectionPanel').classList.remove('hide');document.title='SentinelGuard Active · Download protection';if(!state.activeEdition){state.activeEdition=true;refreshActive();}}
+  if(j.product?.activeEdition){document.querySelector('#activeProtectionPanel').classList.remove('hide');document.title='SentinelGuard 4.0 · Security Center';if(!state.activeEdition){state.activeEdition=true;refreshActive();}}
   for(let id of [...state.selected])if(!state.findings.some(f=>f.id===id&&f.canQuarantine))state.selected.delete(id);
   renderStatus();if(state.activeTab==='findings')renderFindings();
  }catch(e){state.connectionLosses++;if(state.connectionLosses>=3)renderStatus()}
@@ -269,7 +269,7 @@ document.querySelectorAll('[name=engine]').forEach(e=>e.onchange=updateEngine);
 $('scan').onclick=start;$('cancel').onclick=async()=>{try{await api('/api/stop',{})}catch(e){toastError(e)}};
 $('windowsSecurity').onclick=async()=>{try{await api('/api/security',{})}catch(e){toastError(e)}};
 $('exit').onclick=async()=>{if(!confirm('Exit SentinelGuard? Scanning, if active, will stop.'))return;try{await api('/api/exit',{});document.body.innerHTML='<main style="max-width:600px;margin:100px auto;padding:30px;color:#cbd5e1;font:18px system-ui"><h2>SentinelGuard closed.</h2><p>You can close this browser tab. Restart SentinelGuard.exe to run another scan.</p></main>'}catch(e){toastError(e)}};
-$('export').onclick=()=>{const a=document.createElement('a');a.href='/api/report?token='+encodeURIComponent(TOKEN);a.download='SentinelGuard_v3.3_Report.json';document.body.appendChild(a);a.click();a.remove()};
+$('export').onclick=()=>{const a=document.createElement('a');a.href='/api/report?token='+encodeURIComponent(TOKEN);a.download='SentinelGuard_v4.0_Report.json';document.body.appendChild(a);a.click();a.remove()};
 $('refreshVault').onclick=refreshVault;document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>tabs(b.dataset.tab));
 async function poll(){await refresh();setTimeout(poll,1000)}
 poll();refreshVault();

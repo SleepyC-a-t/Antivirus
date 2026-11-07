@@ -22,7 +22,7 @@ var pages embed.FS
 
 // Built separately with -ldflags '-X main.edition=active'. The standard
 // SentinelGuard executable retains its existing on-demand behavior.
-var edition = "standard"
+var edition = "integrated" // v4.0 combines manual and opt-in live scanning
 
 type Server struct {
     active *ActiveMonitor
@@ -74,7 +74,7 @@ func (s *Server) secure(next http.Handler) http.Handler {
 			return
 		}
 		if o := r.Header.Get("Origin"); o != "" && o != "http://"+s.address {
-            allowExtension := edition=="active" && r.URL.Path=="/api/active/extension-status" &&
+            allowExtension := (edition=="integrated"||edition=="active") && r.URL.Path=="/api/active/extension-status" &&
                 (strings.HasPrefix(o,"moz-extension://") || strings.HasPrefix(o,"chrome-extension://"))
             if !allowExtension {
                 http.Error(w,"invalid origin",403);return
@@ -123,7 +123,7 @@ func (s *Server) routes() http.Handler {
 	})
 	mux.HandleFunc("/api/snapshot", func(w http.ResponseWriter, r *http.Request) {
 		status, fs := s.app.snapshot()
-		sendJSON(w, map[string]any{"status": status, "findings": fs, "product": map[string]any{"name":map[bool]string{true:"SentinelGuard Active",false:"SentinelGuard"}[edition=="active"],"version":"3.3-active-preview", "type":"advisory static scanner","activeEdition":edition=="active"}})
+		sendJSON(w, map[string]any{"status": status, "findings": fs, "product": map[string]any{"name":"SentinelGuard","version":"4.0", "type":"manual and optional live-protection scanner","activeEdition":s.active!=nil,"desktop":true}})
 	})
 	mux.HandleFunc("/api/choose-folder", func(w http.ResponseWriter, r *http.Request) {
         if !requirePost(w, r) { return }
@@ -385,8 +385,8 @@ func (s *Server) routes() http.Handler {
 		st, fs := s.app.snapshot()
 		skippedPaths := s.app.skippedSnapshot()
 		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Content-Disposition", `attachment; filename="SentinelGuard_v3.3_Report.json"`)
-		sendJSON(w, map[string]any{"product": "SentinelGuard", "version": "3.3", "exportedAt": time.Now(), "status": st, "findings": fs, "skippedPaths": skippedPaths, "notice": "These findings may be false positives. Defender scans are separate from heuristic scans."})
+		w.Header().Set("Content-Disposition", `attachment; filename="SentinelGuard_v4.0_Report.json"`)
+		sendJSON(w, map[string]any{"product": "SentinelGuard", "version": "4.0", "exportedAt": time.Now(), "status": st, "findings": fs, "skippedPaths": skippedPaths, "notice": "These findings may be false positives. Defender scans are separate from heuristic scans."})
 	})
 	mux.HandleFunc("/api/exit", func(w http.ResponseWriter, r *http.Request) {
 		if !requirePost(w, r) {
@@ -426,7 +426,7 @@ func main() {
 		log.Fatal(err)
 	}
 	server := &Server{app: newApp(vault), token: token, address: listener.Addr().String()}
-    if edition=="active" {
+    if edition=="integrated" || edition=="active" {
         server.active=newActiveMonitor(vault)
         browserSecret:=make([]byte,32)
         if _,err:=rand.Read(browserSecret);err!=nil {log.Fatal(err)}
@@ -441,9 +441,16 @@ func main() {
 			log.Print(err)
 		}
 	}()
-	if err := openBrowser(url); err != nil {
-		reportStartupError("Unable to open browser. URL: " + url + "\n" + err.Error())
-	}
-	// Keep the server alive until the user chooses Exit in its local interface.
-	select {}
+	// The native desktop window and its scanner backend live in the same
+    // executable. The explicit CI headless switch never enables protection.
+    if os.Getenv("SENTINELGUARD_TEST_NO_GUI")=="1" {
+        select {}
+    }
+    if err:=openDesktop(url);err!=nil {
+        reportStartupError("Could not open SentinelGuard desktop window: "+err.Error())
+        log.Printf("Could not create native window: %v",err)
+    }
+    if server.active!=nil {_=server.active.setEnabled(false)}
+    server.app.stop()
+    _=httpSrv.Close()
 }

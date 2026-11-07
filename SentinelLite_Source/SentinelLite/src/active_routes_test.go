@@ -20,7 +20,7 @@ func activeRequest(server *Server, method,path,token,origin string) *httptest.Re
 }
 func TestActiveBrowserPairingIsReadOnly(t *testing.T) {
   original:=edition
-  edition="active"
+  edition="integrated"
   defer func(){edition=original}()
   monitor:=newActiveMonitor(nil)
   server:=&Server{app:newApp(nil),active:monitor,token:"scanner-admin-secret",

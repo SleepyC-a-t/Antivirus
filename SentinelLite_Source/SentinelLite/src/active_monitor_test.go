@@ -63,6 +63,7 @@ func TestActiveOnlyAutoQuarantinesHighConfidence(t *testing.T) {
         if filepath.Base(p)=="high.exe"{score=120}
         return &Finding{Path:p,Name:filepath.Base(p),Score:score,Reasons:[]string{"inert test result"},Size:st.Size(),Modified:st.ModTime(),CanQuarantine:true}
     }
+    m.setAutoQuarantine(true)
     if err:=m.setEnabled(true);err!=nil{t.Fatal(err)}
     for _,n:=range []string{"high.exe","review.exe"}{
         p:=filepath.Join(dir,n)
