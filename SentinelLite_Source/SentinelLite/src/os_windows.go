@@ -4,7 +4,9 @@ package main
 
 import (
 	"os"
-	"os/exec"
+	"errors"
+	"runtime"
+	"golang.org/x/sys/windows"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -39,12 +41,45 @@ func fixedAndRemovableDrives() []string {
 	}
 	return out
 }
-func openBrowser(url string) error {
-	return exec.Command("rundll32.exe", "url.dll,FileProtocolHandler", url).Start()
+// Shell item selection is intentionally an explicit UI action, never called
+// from the passive scanner. It does not pass a command-line string to explorer.
+var shellFolder=windows.NewLazySystemDLL("shell32.dll")
+var ilCreateFromPath=shellFolder.NewProc("ILCreateFromPathW")
+var ilClone=shellFolder.NewProc("ILClone")
+var ilFindLast=shellFolder.NewProc("ILFindLastID")
+var ilRemoveLast=shellFolder.NewProc("ILRemoveLastID")
+var ilFree=shellFolder.NewProc("ILFree")
+var shOpenSelect=shellFolder.NewProc("SHOpenFolderAndSelectItems")
+func openLocation(path string)error{
+    full,err:=filepath.Abs(path);if err!=nil{return err}
+    name,err:=windows.UTF16PtrFromString(full);if err!=nil{return err}
+    absolute,_,_:=ilCreateFromPath.Call(uintptr(unsafe.Pointer(name)))
+    runtime.KeepAlive(name)
+    if absolute==0{return errors.New("cannot parse path into a Windows Shell item")}
+    defer ilFree.Call(absolute)
+    parent,_,_:=ilClone.Call(absolute)
+    if parent==0{return errors.New("could not clone Shell folder identifier")}
+    defer ilFree.Call(parent)
+    ok,_,_:=ilRemoveLast.Call(parent)
+    if ok==0{return errors.New("cannot locate parent folder for selected item")}
+    child,_,_:=ilFindLast.Call(absolute)
+    if child==0{return errors.New("cannot locate selected item")}
+    children:=[]uintptr{child}
+    hresult,_,_:=shOpenSelect.Call(parent,1,uintptr(unsafe.Pointer(&children[0])),0)
+    runtime.KeepAlive(children)
+    if int32(hresult)<0{return errors.New("Windows Shell could not open the containing folder")}
+    return nil
 }
-func openLocation(path string) error { return exec.Command("explorer.exe", "/select,"+path).Start() }
-func openWindowsSecurity() error {
-	return exec.Command("explorer.exe", "windowsdefender://threat/").Start()
+func openWindowsSecurity()error{
+    verb,_:=windows.UTF16PtrFromString("open")
+    uri,err:=windows.UTF16PtrFromString("windowsdefender://threat/");if err!=nil{return err}
+    info:=shellExecuteInfo{verb:verb,file:uri,show:1}
+    info.cbSize=uint32(unsafe.Sizeof(info))
+    result,_,callErr:=shellExecuteExW.Call(uintptr(unsafe.Pointer(&info)))
+    runtime.KeepAlive(info)
+    if result==0{return errors.New("Windows Shell refused security-center navigation: "+callErr.Error())}
+    if info.hProcess!=0{_ = windows.CloseHandle(info.hProcess)}
+    return nil
 }
 func reportStartupError(err string) {
 	title, _ := syscall.UTF16PtrFromString("SentinelGuard - error")
