@@ -1,11 +1,11 @@
-name: SentinelGuard 4.0 — desktop and optional active protection
+name: SentinelGuard 4.1 — desktop and optional active protection
 on:
   pull_request:
     paths:
       - '.github/workflows/sentinellite-windows.yml'
       - 'SentinelLite_Source/**'
       - 'Active_Edition/**'
-      - 'SentinelGuard-4.0.exe'
+      - 'SentinelGuard-4.1.exe'
   push:
     branches: [main]
     paths:
@@ -23,7 +23,7 @@ concurrency:
 
 jobs:
   windows-validation:
-    name: Test, build, and launch SentinelGuard 4.0 on Windows
+    name: Test, build, and launch SentinelGuard 4.1 on Windows
     runs-on: windows-latest
     timeout-minutes: 22
     defaults:
@@ -53,13 +53,13 @@ jobs:
         run: go test -count=1 -v ./...
       - name: Build desktop Windows executable
         run: |
-          $exe = Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.0.exe'
+          $exe = Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.1.exe'
           go build -trimpath -ldflags '-s -w -H windowsgui' -o $exe .
           if ($LASTEXITCODE -ne 0 -or !(Test-Path $exe)) { throw 'Windows desktop build failed' }
           Get-FileHash -Algorithm SHA256 $exe | Format-List
       - name: Headless Windows startup smoke test
         run: |
-          $exe = Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.0.exe'
+          $exe = Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.1.exe'
           $env:SENTINELGUARD_TEST_NO_GUI='1'
           $app=Start-Process -FilePath $exe -WorkingDirectory $env:RUNNER_TEMP -PassThru
           try {
@@ -91,6 +91,7 @@ jobs:
           node -e "const fs=require('fs');const m=JSON.parse(fs.readFileSync('manifest.json','utf8'));if(m.manifest_version!==3||!m.permissions.includes('declarativeNetRequest'))process.exit(1);"
           node --check background.js
           node --check popup.js
+          node url_rules_test.cjs
           node --check ../browser-extension-firefox/background.js
           node --check ../browser-extension-firefox/popup.js
           node -e "const fs=require('fs');const a=JSON.parse(fs.readFileSync('manifest.json','utf8'));const b=JSON.parse(fs.readFileSync('../browser-extension-firefox/manifest.json','utf8'));if(!a.background.service_worker||a.background.scripts||!b.background.scripts||b.background.service_worker)process.exit(1)"
@@ -98,23 +99,23 @@ jobs:
         shell: pwsh
         working-directory: .
         run: |
-          $package=Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.0'
+          $package=Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.1'
           New-Item -ItemType Directory -Force -Path $package | Out-Null
-          Copy-Item (Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.0.exe') $package
+          Copy-Item (Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.1.exe') $package
           Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'Active_Edition/browser-extension') (Join-Path $package 'browser-extension') -Recurse
           Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'Active_Edition/browser-extension-firefox') (Join-Path $package 'browser-extension-firefox') -Recurse
           Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'Active_Edition/README.md') (Join-Path $package 'README.txt')
       - name: Publish verified v4 Windows build
         uses: actions/upload-artifact@v4
         with:
-          name: SentinelGuard-4.0-Windows-Tested
-          path: ${{ runner.temp }}/SentinelGuard-4.0/
+          name: SentinelGuard-4.1-Windows-Tested
+          path: ${{ runner.temp }}/SentinelGuard-4.1/
           if-no-files-found: error
           retention-days: 14
       - name: Publish resolved Go module checksums for source reproducibility
         uses: actions/upload-artifact@v4
         with:
-          name: SentinelGuard-4.0-Go-Dependency-Lock
+          name: SentinelGuard-4.1-Go-Dependency-Lock
           path: |
             SentinelLite_Source/SentinelLite/src/go.mod
             SentinelLite_Source/SentinelLite/src/go.sum
@@ -136,4 +137,4 @@ jobs:
         with:
           python-version: '3.12'
       - name: Go race detector for concurrent scanning and watcher
-        run: go test -race -count=1 -run '^Test(Active|StandardEdition|Stage12SustainedCustomScanAndConcurrentStatus|Stage12ResourceMetricsResetAndReport|Stage12CancelledScanStopsTelemetry|V4ActiveClaudeFullInertDownloadSimulation)' ./...
+        run: go test -race -count=1 -run '^Test(Active|StandardEdition|Stage12SustainedCustomScanAndConcurrentStatus|Stage12ResourceMetricsResetAndReport|Stage12CancelledScanStopsTelemetry|V4ActiveClaudeFullInertDownloadSimulation|SafeLaunch)' ./...

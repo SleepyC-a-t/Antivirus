@@ -4,12 +4,11 @@ import (
     "os"
     "path/filepath"
     "testing"
-    "time"
 )
 
 func TestSafeLaunchOptInApprovalAuditAndNoExecutionByDefault(t *testing.T){
     folder:=t.TempDir()
-    p:=filepath.Join(folder,"synthetic.exe")
+    p:=filepath.Join(folder,"invoice.pdf.exe")
     if err:=os.WriteFile(p,[]byte("MZ inert simulated executable, never executed"),0600);err!=nil{t.Fatal(err)}
     m:=newActiveMonitor(nil)
     m.watched=[]string{folder}
@@ -40,7 +39,7 @@ func TestSafeLaunchOptInApprovalAuditAndNoExecutionByDefault(t *testing.T){
 }
 func TestSafeLaunchFileChangeBlocksExecution(t *testing.T){
     folder:=t.TempDir()
-    p:=filepath.Join(folder,"changed.exe")
+    p:=filepath.Join(folder,"invoice.pdf.exe")
     if err:=os.WriteFile(p,[]byte("MZ 12345"),0600);err!=nil{t.Fatal(err)}
     m:=newActiveMonitor(nil);m.watched=[]string{folder}
     if err:=m.setEnabled(true);err!=nil{t.Fatal(err)}
@@ -50,11 +49,13 @@ func TestSafeLaunchFileChangeBlocksExecution(t *testing.T){
         _=os.WriteFile(p,[]byte("MZ changed after warning"),0600)
         return true
     },func(string)error{launched=true;return nil})
-    // Default inspector may not flag this inert program. Supply a test
-    // signature-like double extension so the warning branch is reached.
-    _=result
-    _=err
-    _=launched
+    if err==nil || launched || result.Started || result.Decision!="blocked" {
+        t.Fatalf("changed executable was allowed: result=%+v err=%v launched=%t",result,err,launched)
+    }
+    snap:=m.snapshot()
+    if snap.LaunchDenied!=1 || snap.LaunchApproved!=0 {
+        t.Fatalf("mutation was not logged as denied: %+v",snap)
+    }
 }
 func TestSafeLaunchRejectsNonExePaths(t *testing.T){
     if _,_,err:=verifyExecutable(filepath.Join(t.TempDir(),"script.ps1"));err==nil{
@@ -62,5 +63,4 @@ func TestSafeLaunchRejectsNonExePaths(t *testing.T){
     }
     m:=newActiveMonitor(nil)
     if m.snapshot().SafeLaunch {t.Fatal("safe launch should begin OFF")}
-    _=time.Now()
 }
