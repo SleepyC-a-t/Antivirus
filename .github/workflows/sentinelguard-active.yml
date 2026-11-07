@@ -1,4 +1,4 @@
-name: SentinelGuard 4.1 — Browser companion validation
+name: SentinelGuard 4.2 — Browser companion validation
 on:
   pull_request:
     paths:
@@ -27,6 +27,28 @@ jobs:
           for(const m of [c,f]){
             if(!m.permissions.includes('declarativeNetRequest'))throw Error('No declarativeNetRequest permission');
           }
+          JS
+      - name: Check 4.2 version parity and removed contradictory README
+        run: |
+          node - <<'JS'
+          const fs = require('node:fs');
+          const root = 'Active_Edition/';
+          const c = JSON.parse(fs.readFileSync(root+'browser-extension/manifest.json', 'utf8'));
+          const f = JSON.parse(fs.readFileSync(root+'browser-extension-firefox/manifest.json', 'utf8'));
+          for (const m of [c,f]) {
+            if(m.version !== '4.2.0' || !m.name.includes('4.2') || !m.description.includes('4.2'))
+              throw Error('Companion manifest inconsistent with release 4.2');
+          }
+          if(f.browser_specific_settings?.gecko?.id !== 'sentinelguard-4.2@local.invalid')
+            throw Error('Firefox ID not updated');
+          const readme = fs.readFileSync(root+'README.md', 'utf8');
+          if(!readme.includes('SentinelGuard 4.2'))
+            throw Error('Deployment README has incorrect version');
+          if(/pairing must be renewed after restarting/i.test(readme))
+            throw Error('Contradictory pairing persistence instructions');
+          const go = fs.readFileSync('SentinelLite_Source/SentinelLite/src/main.go', 'utf8');
+          if(!go.includes('"version":"4.2"'))
+            throw Error('Runtime product version mismatches 4.2');
           JS
       - name: JavaScript syntax checks
         run: |
