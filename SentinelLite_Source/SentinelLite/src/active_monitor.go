@@ -42,6 +42,8 @@ type ActiveStatus struct {
     LaunchReviews int64 `json:"launchReviews"`
     LaunchAllowed int64 `json:"launchAllowed"`
     LaunchDenied int64 `json:"launchDenied"`
+    LaunchEvents []ActiveEvent `json:"launchEvents"`
+    LaunchLogOmitted int64 `json:"launchLogOmitted"`
     Notice string `json:"notice"`
 }
 type ActiveMonitor struct {
@@ -56,6 +58,8 @@ type ActiveMonitor struct {
     seen map[string]activeStamp
     pending map[string]activePending
     events []ActiveEvent
+    launchEvents []ActiveEvent
+    launchLogOmitted int64
     inspected,flagged,quarantined int64
     lastError string
     vault *Vault
@@ -73,6 +77,7 @@ func newActiveMonitor(vault *Vault) *ActiveMonitor {
 func (a *ActiveMonitor) snapshot() ActiveStatus {
     a.mu.RLock();defer a.mu.RUnlock()
     out:=ActiveStatus{Edition:"SentinelGuard 4.1",Enabled:a.enabled,AutoQuarantine:a.autoQuarantine,LaunchReviewEnabled:a.launchReviewEnabled,WatcherMode:activeNativeWatcherMode(),LaunchReviews:a.launchReviews,LaunchAllowed:a.launchAllowed,LaunchDenied:a.launchDenied,
+        LaunchEvents:append([]ActiveEvent{},a.launchEvents...),LaunchLogOmitted:a.launchLogOmitted,
         WatchedFolders:append([]string{},a.watched...),Inspected:a.inspected,Flagged:a.flagged,
         Quarantined:a.quarantined,LastError:a.lastError,Events:append([]ActiveEvent{},a.events...),
         Notice:"Opt-in user-mode monitoring; Windows filesystem change notifications with periodic reconciliation. Files are inspected after writes settle, not before execution. Scan & Run is an optional pre-launch review only when the user explicitly launches from SentinelGuard, not a system-wide executable blocker. Keep your main antivirus enabled."}
@@ -90,10 +95,18 @@ func (a *ActiveMonitor) setLaunchReview(value bool){
 }
 func (a *ActiveMonitor) recordLaunch(path,action,reason string,score int){
     a.mu.Lock()
-    a.appendEventLocked(ActiveEvent{At:time.Now(),Path:path,Action:action,Reason:reason,Score:score})
+    e:=ActiveEvent{At:time.Now(),Path:path,Action:action,Reason:reason,Score:score}
+    a.appendEventLocked(e)
+    if len(a.launchEvents)>=512 {
+        copy(a.launchEvents,a.launchEvents[1:])
+        a.launchEvents[len(a.launchEvents)-1]=e
+        a.launchLogOmitted++
+    }else{
+        a.launchEvents=append(a.launchEvents,e)
+    }
     if action=="launch-reviewed"{a.launchReviews++}
     if action=="launch-approved"{a.launchAllowed++}
-    if action=="launch-denied"||action=="launch-cancelled"{a.launchDenied++}
+    if action=="launch-denied"||action=="launch-cancelled"||action=="launch-refused"{a.launchDenied++}
     a.mu.Unlock()
 }
 func (a *ActiveMonitor) launchReviewOn()bool{
@@ -304,7 +317,7 @@ func (a *ActiveMonitor) start() {
     }()
 }
 func (a *ActiveMonitor) clearHistory(){
-    a.mu.Lock();a.events=nil;a.inspected=0;a.flagged=0;a.quarantined=0;a.mu.Unlock()
+    a.mu.Lock();a.events=nil;a.launchEvents=nil;a.launchLogOmitted=0;a.inspected=0;a.flagged=0;a.quarantined=0;a.launchReviews=0;a.launchDenied=0;a.launchAllowed=0;a.mu.Unlock()
 }
 func (a *ActiveMonitor) summaryText() string {
     s:=a.snapshot()
