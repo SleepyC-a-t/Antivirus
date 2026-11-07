@@ -47,7 +47,7 @@ foreach ($pair in @(@('old',$Baseline),@('patched',$Patched))) {
  try {
    & logman create trace $session -p $provider 0xFFFFFFFF 5 -o $etl -ow
    if ($LASTEXITCODE -ne 0) {throw "logman create failed: $LASTEXITCODE"}
-   & logman start $session -ets
+   & logman start $session
    if ($LASTEXITCODE -ne 0) {throw "logman start failed: $LASTEXITCODE"}
    $enabled=$true
    Push-Location $dir
@@ -60,10 +60,19 @@ foreach ($pair in @(@('old',$Baseline),@('patched',$Patched))) {
      if($LASTEXITCODE -ne 0){throw "$tag forensic scan failed"}
    } finally {Pop-Location}
  } finally {
-   if($enabled){& logman stop $session -ets}
+   if($enabled){& logman stop $session}
    & logman delete $session
  }
- if(!(Test-Path $etl)){throw "$tag ETW trace was not recorded"}
+ if (!(Test-Path $etl)) {
+   $detected=Get-ChildItem -Path $outputFolder -Filter '*.etl' -File -ErrorAction SilentlyContinue |
+      Sort-Object LastWriteTime -Descending | Select-Object -First 1
+   if($detected){$etl=$detected.FullName}
+   else {
+     Write-Host "Available output files:"
+     Get-ChildItem $outputFolder -Recurse | ForEach-Object {Write-Host $_.FullName}
+     throw "$tag ETW trace was not recorded"
+   }
+ }
  # Keep raw ETW and tracerpt CSV even if event field parsing varies by OS.
  & tracerpt $etl -of CSV -o $csv -y 2>&1 |
     Out-File (Join-Path $outputFolder 'tracerpt-output.log')
