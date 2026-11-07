@@ -1,5 +1,14 @@
 # SentinelGuard 4.2 — experimental Windows desktop security center
 
+> **SECURITY HOLD — review-only hotfix candidate.** The first user full-drive
+> scan of the earlier 4.2 executable produced repeated command windows and was
+> stopped. The earlier build must not be run. The source-level PowerShell
+> publisher-lookup defect has been removed, but this candidate has **NOT**
+> been independently approved by Claude or field-tested on Windows. Do not
+> resume scans on a personal computer. See
+> `docs/SentinelGuard-4.2-SAFETY-INCIDENT.md` for forensic limitations,
+> exact mitigation commits, CI evidence and outstanding validation gates.
+>
 SentinelGuard 4.2 combines the manual heuristic scanner and **optional** download
 monitoring in one Microsoft Edge WebView2 desktop window. **Live protection,
 automatic quarantine and Scan & Run are all OFF on every launch.** It is a
