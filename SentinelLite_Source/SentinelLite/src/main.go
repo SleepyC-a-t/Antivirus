@@ -44,53 +44,7 @@ type Server struct {
 	pickingFolder atomic.Bool
 }
 
-var browserChallengeNonce=regexp.MustCompile(`^[A-Za-z0-9_-]{32,64}package main
-
-import (
-	"crypto/rand"
-    "crypto/hmac"
-    "crypto/sha256"
-	"crypto/subtle"
-	"embed"
-	"encoding/base64"
-    "regexp"
-    "strconv"
-	"encoding/json"
-	"errors"
-	"log"
-	"net"
-	"net/http"
-	"os"
-	"path/filepath"
-    "strings"
-    "sync"
-	"sync/atomic"
-	"time"
-)
-
-//go:embed ui.html
-var pages embed.FS
-
-// Built separately with -ldflags '-X main.edition=active'. The standard
-// SentinelGuard executable retains its existing on-demand behavior.
-var edition = "integrated" // v4.2 combines manual and opt-in live scanning
-
-type Server struct {
-    active *ActiveMonitor
-    extensionToken string // read-only browser companion credential
-    pairMu sync.RWMutex
-    launchMu sync.Mutex
-    launchTickets map[string]launchTicket
-    launchRunner func(string) error
-    pairPersisted bool
-	app     *App
-	token   string
-	address string
-	folderPicker func() (string, error) // optional test override
-	pickingFolder atomic.Bool
-}
-
-)
+var browserChallengeNonce=regexp.MustCompile("^[A-Za-z0-9_-]{32,64}$")
 func (s *Server) browserChallengeMAC(nonce string,enabled bool) string {
     key,_:=s.pairSnapshot()
     raw,err:=base64.RawURLEncoding.DecodeString(key)
