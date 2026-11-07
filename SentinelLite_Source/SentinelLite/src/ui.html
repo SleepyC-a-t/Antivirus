@@ -78,9 +78,14 @@ button{background:#203149;border:1px solid #39516b;color:#dce7f9;padding:10px 14
       <p class="active-sub">Review-level findings are never automatically quarantined. There is a delay after a download finishes; do not open untrusted files before your main antivirus scans them.</p></div>
       <div class="active-options"><b>Folders monitored:</b><div id="activeWatchedFolders" class="active-watch">Not configured</div>
       <div class="active-btns"><button class="outline" id="activeAddFolder">Add folder…</button><button class="outline" id="activeRemoveFolder">Remove folder…</button></div></div>
+      <div class="active-options"><b>Scan &amp; Run — optional launch review</b>
+      <p class="active-sub">Only checks Windows EXE programs that you explicitly select here. This cannot pause programs launched from Explorer or other apps; it is not a system-wide pre-execution blocker. A finding is not proof of malware.</p>
+      <label><input id="activeLaunchToggle" type="checkbox"> Enable Scan &amp; Run (OFF by default)</label>
+      <div class="active-btns"><button class="outline" id="activeLaunch">Choose EXE, inspect, then ask before launch…</button></div>
+      <p id="launchReviewStatus" class="active-sub">Approval is required before SentinelGuard launches the selected program.</p></div>
       <div class="active-options"><b>Browser protection (optional companion extension)</b>
-      <p class="active-sub">Blocks exact phishing URLs from a free community feed in Firefox/Chrome/Edge after you pair the extension. Controlled by the ON/OFF switch, with up to a 1-minute delay. Never intercepts or uploads browsing history.</p>
-      <div class="active-btns"><button class="outline" id="activePair">Copy read-only browser pairing link</button><button class="outline" id="activeReport">Export protection report</button></div>
+      <p class="active-sub">Blocks exact phishing URLs from a free community feed in Firefox/Chrome/Edge after you pair the extension. Controlled by the ON/OFF switch, with with a short synchronization delay. Never intercepts or uploads browsing history.</p>
+      <div class="active-btns"><button class="outline" id="activePair">Copy read-only browser pairing link</button><button class="outline" id="activePairRevoke">Revoke browser pairing</button><button class="outline" id="activeReport">Export full protection report</button><button class="outline" id="activeReportRedacted">Export redacted protection report</button></div>
       <p id="activeMessage" class="active-sub"></p></div>
       <div class="active-options"><b>Recent protection events</b><div id="activeEvents" class="active-events">No events yet.</div></div>
     </section>
@@ -99,7 +104,7 @@ button{background:#203149;border:1px solid #39516b;color:#dce7f9;padding:10px 14
     </section>
 
     <div class="panel content-panel"><div class="tabs"><button class="tab active" data-tab="findings">Findings</button><button class="tab" data-tab="vault">Quarantine <span id="vaultCount" class="small"></span></button></div>
-      <div id="findingsTab"><div class="tools"><input type="text" class="search" id="search" placeholder="Search name, path or reason…"><select id="filter"><option value="all">All severity levels</option><option value="High">High</option><option value="Elevated">Elevated</option><option value="Review">Review</option></select><button id="export">Export report</button></div>
+      <div id="findingsTab"><div class="tools"><input type="text" class="search" id="search" placeholder="Search name, path or reason…"><select id="filter"><option value="all">All severity levels</option><option value="High">High</option><option value="Elevated">Elevated</option><option value="Review">Review</option></select><button id="export">Export full report</button><button id="exportRedacted">Export redacted report</button></div>
         <details class="report-privacy" id="reportPrivacy"><summary>Privacy and JSON report contents — read before sharing</summary>
           <p><strong>Includes:</strong> product name and version; export timestamp (<code>exportedAt</code>); a notice; scan status (<code>active</code>, <code>mode</code>, <code>current</code> scan path, file/skipped/finding/omitted counts, scan start time, error text, and <code>resources</code> containing the CPU and memory current/average/peak values, sample count, and sample timestamp). <code>current</code> and errors can contain full folder or drive paths.</p>
           <p><strong>Skipped paths:</strong> <code>skippedPaths</code> lists full filesystem paths and readable reasons (for example, access denied, reparse point, or an archive inspection limit). <code>status.skipLogOmitted</code> counts any records beyond the 100,000-entry memory safety limit. Unlike the previous version, a scan may contain more identifiable filesystem metadata even when no threats were found. Defender's separate engine does not expose per-file skip telemetry.</p>
@@ -165,7 +170,7 @@ function renderStatus(){
 async function refresh(){
  try{
   let j=await api('/api/snapshot');state.connectionLosses=0;state.status=j.status;state.findings=j.findings||[];
-  if(j.product?.activeEdition){document.querySelector('#activeProtectionPanel').classList.remove('hide');document.title='SentinelGuard 4.0 · Security Center';if(!state.activeEdition){state.activeEdition=true;refreshActive();}}
+  if(j.product?.activeEdition){document.querySelector('#activeProtectionPanel').classList.remove('hide');document.title='SentinelGuard 4.2 · Security Center';if(!state.activeEdition){state.activeEdition=true;refreshActive();}}
   for(let id of [...state.selected])if(!state.findings.some(f=>f.id===id&&f.canQuarantine))state.selected.delete(id);
   renderStatus();if(state.activeTab==='findings')renderFindings();
  }catch(e){state.connectionLosses++;if(state.connectionLosses>=3)renderStatus()}
@@ -207,6 +212,8 @@ async function refreshActive(){
    $('activeState').className=j.enabled?'active-good':'active-bad';
    $('activeToggle').textContent=j.enabled?'Turn protection OFF':'Turn protection ON';
    $('activeAutoBlock').checked=!!j.autoQuarantine;
+   $('activeLaunchToggle').checked=!!j.launchReviewEnabled;
+   $('activeLaunch').disabled=!(j.enabled&&j.launchReviewEnabled);
    $('activeInspected').textContent=fmt(j.inspected||0);
    $('activeFlagged').textContent=fmt(j.flagged||0);
    $('activeBlocked').textContent=fmt(j.quarantined||0);
@@ -247,12 +254,48 @@ $('activeRemoveFolder').onclick=async()=>{
  if(!folder)return;
  try{await api('/api/active/unwatch',{Path:folder});await refreshActive()}catch(e){toastError(e)}
 };
+$('activeLaunchToggle').onchange=async()=>{
+ try {await api('/api/active/launch-toggle',{Enabled:$('activeLaunchToggle').checked});await refreshActive()}
+ catch(e){toastError(e);await refreshActive()}
+};
+$('activeLaunch').onclick=async()=>{
+ try {
+   const r=await api('/api/active/launch-choose',{});
+   if(r.cancelled)return;
+   const details=r.reasons?.length?r.reasons.join('\n  • '):'No indicators found by SentinelGuard (not proof of safety).';
+   const warning=r.score>=50?'\n\nWARNING: SentinelGuard flagged potentially suspicious behavior.':'';
+   const promptText='Scan & Run — REVIEW BEFORE LAUNCH\n\n'+r.path+
+     '\nScore: '+r.score+' | '+r.severity+
+     '\nSHA-256: '+r.sha256+
+     '\nSize: '+r.size+' bytes'+
+     '\nAuthenticode: '+r.signatureStatus+' | Publisher: '+r.publisher+
+     '\nZone.Identifier: '+r.zone+
+     '\nInspection: '+r.inspection+
+     '\nIndicators:\n  • '+details+warning+
+     '\n\n'+r.warning+'\n\nRun this program anyway?';
+   const approved=confirm(promptText);
+   await api('/api/active/launch-decision',{Ticket:r.ticket,Approve:approved});
+   $('launchReviewStatus').textContent=approved?'Approved: Windows was asked to launch the selected executable.':'Launch cancelled; no program started by SentinelGuard.';
+   await refreshActive();
+ }catch(e){toastError(e);$('launchReviewStatus').textContent='Launch review error: '+e.message;await refreshActive()}
+};
+$('activePairRevoke').onclick=async()=>{
+ if(!confirm('Revoke all existing browser extension pairings? You will need to pair your browsers again.'))return;
+ try{await api('/api/active/browser-revoke',{});$('activeMessage').textContent='Browser access revoked. Re-pair extensions to restore URL blocking.'}
+ catch(e){toastError(e)}
+};
 $('activePair').onclick=async()=>{
  try{
    const response=await api('/api/active/browser-pair');
    await navigator.clipboard.writeText(response.pairing);
    $('activeMessage').textContent='Read-only pairing link copied. Paste it into the SentinelGuard browser extension popup. Treat it as a private connection secret.';
  }catch(e){toastError(e)}
+};
+$('activeReportRedacted').onclick=()=>{
+ const a=document.createElement('a');
+ a.href='/api/active/report?redacted=1&token='+encodeURIComponent(TOKEN);
+ a.download='SentinelGuard_v4.2_Redacted_Live_Report.json';
+ document.body.appendChild(a);a.click();a.remove();
 };
 $('activeReport').onclick=()=>{
  const a=document.createElement('a');
@@ -269,7 +312,8 @@ document.querySelectorAll('[name=engine]').forEach(e=>e.onchange=updateEngine);
 $('scan').onclick=start;$('cancel').onclick=async()=>{try{await api('/api/stop',{})}catch(e){toastError(e)}};
 $('windowsSecurity').onclick=async()=>{try{await api('/api/security',{})}catch(e){toastError(e)}};
 $('exit').onclick=async()=>{if(!confirm('Exit SentinelGuard? Scanning, if active, will stop.'))return;try{await api('/api/exit',{});document.body.innerHTML='<main style="max-width:600px;margin:100px auto;padding:30px;color:#cbd5e1;font:18px system-ui"><h2>SentinelGuard closed.</h2><p>You can close this browser tab. Restart SentinelGuard.exe to run another scan.</p></main>'}catch(e){toastError(e)}};
-$('export').onclick=()=>{const a=document.createElement('a');a.href='/api/report?token='+encodeURIComponent(TOKEN);a.download='SentinelGuard_v4.0_Report.json';document.body.appendChild(a);a.click();a.remove()};
+$('exportRedacted').onclick=()=>{const a=document.createElement('a');a.href='/api/report?redacted=1&token='+encodeURIComponent(TOKEN);a.download='SentinelGuard_v4.2_Redacted_Report.json';document.body.appendChild(a);a.click();a.remove()};
+$('export').onclick=()=>{const a=document.createElement('a');a.href='/api/report?token='+encodeURIComponent(TOKEN);a.download='SentinelGuard_v4.2_Report.json';document.body.appendChild(a);a.click();a.remove()};
 $('refreshVault').onclick=refreshVault;document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>tabs(b.dataset.tab));
 async function poll(){await refresh();setTimeout(poll,1000)}
 poll();refreshVault();

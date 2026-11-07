@@ -1,4 +1,4 @@
-name: SentinelGuard 4.0 — Browser companion validation
+name: SentinelGuard 4.2 — Browser companion validation
 on:
   pull_request:
     paths:
@@ -34,3 +34,4 @@ jobs:
           node --check Active_Edition/browser-extension/popup.js
           node --check Active_Edition/browser-extension-firefox/background.js
           node --check Active_Edition/browser-extension-firefox/popup.js
+          node Active_Edition/browser-extension/browser_rules.test.cjs

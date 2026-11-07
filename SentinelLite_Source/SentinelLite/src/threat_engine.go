@@ -162,7 +162,8 @@ func inspectValidatedShortcut(buf []byte, score *int, reasons *[]string) {
 	// Standard Shell Link CLSID as serialized in a .lnk file.
 	clsid:=[]byte{0x01,0x14,0x02,0x00,0x00,0x00,0x00,0x00,0xc0,0x00,0x00,0x00,0x00,0x00,0x00,0x46}
 	if !bytes.Equal(buf[4:20],clsid){return}
-	inspectShortcut(buf, score, reasons)
+	if inspectStructuredShortcut(buf,score,reasons){return}
+    inspectShortcut(buf, score, reasons)
 }
 
 

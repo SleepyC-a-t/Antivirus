@@ -1,11 +1,11 @@
-name: SentinelGuard 4.0 — desktop and optional active protection
+name: SentinelGuard 4.2 — desktop and optional active protection
 on:
   pull_request:
     paths:
       - '.github/workflows/sentinellite-windows.yml'
       - 'SentinelLite_Source/**'
       - 'Active_Edition/**'
-      - 'SentinelGuard-4.0.exe'
+      - 'SentinelGuard-4.2.exe'
   push:
     branches: [main]
     paths:
@@ -18,12 +18,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: sentinelguard-v4-${{ github.ref }}
+  group: sentinelguard-v42-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   windows-validation:
-    name: Test, build, and launch SentinelGuard 4.0 on Windows
+    name: Test, build, and launch SentinelGuard 4.2 on Windows
     runs-on: windows-latest
     timeout-minutes: 22
     defaults:
@@ -49,17 +49,25 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Go dependency verification failed' }
       - name: Static analysis
         run: go vet ./...
-      - name: Run all synthetic detector and active-mode tests
-        run: go test -count=1 -v ./...
+      - name: Run all synthetic detector, active and independent-benign tests
+        run: |
+          $log=Join-Path $env:RUNNER_TEMP 'v42-all-tests.log'
+          go test -count=1 -v ./... 2>&1 | Tee-Object -FilePath $log
+          if ($LASTEXITCODE -ne 0) { throw 'One or more SentinelGuard regression / safety tests failed' }
+      - name: Generate validation summary from actual test logs
+        working-directory: .
+        run: |
+          python scripts/v42_ci_summary.py (Join-Path $env:RUNNER_TEMP 'v42-all-tests.log') (Join-Path $env:RUNNER_TEMP 'v42-ci-summary.md')
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot generate accurate CI evidence summary' }
       - name: Build desktop Windows executable
         run: |
-          $exe = Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.0.exe'
+          $exe = Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.2.exe'
           go build -trimpath -ldflags '-s -w -H windowsgui' -o $exe .
           if ($LASTEXITCODE -ne 0 -or !(Test-Path $exe)) { throw 'Windows desktop build failed' }
           Get-FileHash -Algorithm SHA256 $exe | Format-List
       - name: Headless Windows startup smoke test
         run: |
-          $exe = Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.0.exe'
+          $exe = Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.2.exe'
           $env:SENTINELGUARD_TEST_NO_GUI='1'
           $app=Start-Process -FilePath $exe -WorkingDirectory $env:RUNNER_TEMP -PassThru
           try {
@@ -93,28 +101,41 @@ jobs:
           node --check popup.js
           node --check ../browser-extension-firefox/background.js
           node --check ../browser-extension-firefox/popup.js
+          node browser_rules.test.cjs
           node -e "const fs=require('fs');const a=JSON.parse(fs.readFileSync('manifest.json','utf8'));const b=JSON.parse(fs.readFileSync('../browser-extension-firefox/manifest.json','utf8'));if(!a.background.service_worker||a.background.scripts||!b.background.scripts||b.background.service_worker)process.exit(1)"
-      - name: Assemble v4 release folder
+      - name: Assemble v4.2 release folder
         shell: pwsh
         working-directory: .
         run: |
-          $package=Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.0'
+          $package=Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.2'
           New-Item -ItemType Directory -Force -Path $package | Out-Null
-          Copy-Item (Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.0.exe') $package
+          Copy-Item (Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.2.exe') $package
           Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'Active_Edition/browser-extension') (Join-Path $package 'browser-extension') -Recurse
           Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'Active_Edition/browser-extension-firefox') (Join-Path $package 'browser-extension-firefox') -Recurse
           Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'Active_Edition/README.md') (Join-Path $package 'README.txt')
+          Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'docs/COVERAGE_MATRIX_v4.2.md') (Join-Path $package 'COVERAGE_MATRIX.md')
+          Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'docs/ISOLATED_STATIC_LAB_RUNBOOK.md') (Join-Path $package 'STATIC_LAB_RUNBOOK.md')
+          Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'docs/RELEASE_SIGNING_AND_PROVENANCE.md') (Join-Path $package 'SIGNING_AND_PROVENANCE.md')
+          Copy-Item (Join-Path $env:RUNNER_TEMP 'v42-ci-summary.md') (Join-Path $package 'CI_VALIDATION_SUMMARY.md')
+          $exe=Join-Path $package 'SentinelGuard-4.2.exe'
+          $digest=(Get-FileHash -Algorithm SHA256 $exe).Hash.ToLowerInvariant()
+          "$digest  SentinelGuard-4.2.exe" | Set-Content -Encoding ascii (Join-Path $package 'SHA256SUMS.txt')
+          Write-Host "CI_UNSIGNED_EXE_SHA256=$digest"
       - name: Publish verified v4 Windows build
         uses: actions/upload-artifact@v4
         with:
-          name: SentinelGuard-4.0-Windows-Tested
-          path: ${{ runner.temp }}/SentinelGuard-4.0/
+          name: SentinelGuard-4.2-Windows-CI-Build
+          path: ${{ runner.temp }}/SentinelGuard-4.2/
           if-no-files-found: error
           retention-days: 14
+      - name: Catch contradictory README/extension versions
+        working-directory: .
+        run: |
+          python -c "import pathlib,json; r=pathlib.Path('Active_Edition/README.md').read_text().lower(); assert 'pairing must be renewed' not in r; a=json.loads(pathlib.Path('Active_Edition/browser-extension/manifest.json').read_text());b=json.loads(pathlib.Path('Active_Edition/browser-extension-firefox/manifest.json').read_text()); assert a['version']==b['version']=='4.2.0'; assert '4.2' in pathlib.Path('SentinelLite_Source/SentinelLite/src/ui.html').read_text()"
       - name: Publish resolved Go module checksums for source reproducibility
         uses: actions/upload-artifact@v4
         with:
-          name: SentinelGuard-4.0-Go-Dependency-Lock
+          name: SentinelGuard-4.2-Go-Dependency-Lock
           path: |
             SentinelLite_Source/SentinelLite/src/go.mod
             SentinelLite_Source/SentinelLite/src/go.sum
@@ -136,4 +157,4 @@ jobs:
         with:
           python-version: '3.12'
       - name: Go race detector for concurrent scanning and watcher
-        run: go test -race -count=1 -run '^Test(Active|StandardEdition|Stage12SustainedCustomScanAndConcurrentStatus|Stage12ResourceMetricsResetAndReport|Stage12CancelledScanStopsTelemetry|V4ActiveClaudeFullInertDownloadSimulation)' ./...
+        run: go test -race -count=1 -run '^Test(Active|StandardEdition|Stage12SustainedCustomScanAndConcurrentStatus|Stage12ResourceMetricsResetAndReport|Stage12CancelledScanStopsTelemetry|V4ActiveClaudeFullInertDownloadSimulation|V41)' ./...

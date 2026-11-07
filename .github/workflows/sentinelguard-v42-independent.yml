@@ -1,0 +1,81 @@
+name: SentinelGuard 4.2 — published harmless EICAR and pinned technique definitions
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/sentinelguard-v42-independent.yml'
+      - 'SentinelLite_Source/**'
+      - 'scripts/v42_technique_holdout.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  static-holdout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    defaults:
+      run:
+        shell: bash
+        working-directory: SentinelLite_Source/SentinelLite/src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: SentinelLite_Source/SentinelLite/src/go.mod
+          cache: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Attempt official harmless EICAR ZIP downloads and validate structure
+        run: |
+          mkdir -p "$RUNNER_TEMP/eicar-official"
+          for name in eicar_com.zip eicarcom2.zip; do
+            dest="$RUNNER_TEMP/eicar-official/$name"
+            if ! curl --fail --silent --show-error --location --connect-timeout 8 --max-time 15 --max-filesize 10240 \
+               "https://secure.eicar.org/$name" -o "$dest"; then
+              echo "V42_OFFICIAL_EICAR_UNAVAILABLE name=$name (not counted as a failed detection)"
+              rm -f "$dest"
+            fi
+          done
+          python - <<'PY'
+          import io,os,pathlib,zipfile,hashlib
+          directory=pathlib.Path(os.environ["RUNNER_TEMP"])/"eicar-official"
+          canonical="275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
+          for name,size in (("eicar_com.zip",184),("eicarcom2.zip",308)):
+              p=directory/name
+              if not p.exists():continue
+              content=p.read_bytes()
+              def matches(blob,depth=0):
+                  if depth>3:return False
+                  try:
+                      with zipfile.ZipFile(io.BytesIO(blob)) as archive:
+                          for item in archive.infolist():
+                              if item.file_size>1024 or item.compress_size>1024:continue
+                              raw=archive.read(item)
+                              if hashlib.sha256(raw[:68]).hexdigest()==canonical and len(raw)==68:return True
+                              if raw[:4]==b"PK\x03\x04" and matches(raw,depth+1):return True
+                  except (zipfile.BadZipFile,RuntimeError):pass
+                  return False
+              if len(content)!=size or not matches(content):
+                  print("V42_OFFICIAL_EICAR_UNRECOGNIZED",name,"len",len(content))
+                  p.unlink()
+              else:
+                  print("V42_OFFICIAL_EICAR_VERIFIED",name,"sha256",hashlib.sha256(content).hexdigest())
+          PY
+          echo "SENTINELGUARD_EICAR_OFFICIAL_DIR=$RUNNER_TEMP/eicar-official" >> "$GITHUB_ENV"
+      - name: Fetch pinned independent Atomic Red Team/LOLBAS metadata (read-only)
+        working-directory: .
+        run: |
+          python scripts/v42_technique_holdout.py "$RUNNER_TEMP/v42-techniques"
+          echo "SENTINELGUARD_TECHNIQUE_CORPUS=$RUNNER_TEMP/v42-techniques" >> "$GITHUB_ENV"
+      - name: Read-only EICAR, ZIP-negative-controls and technique coverage tests
+        run: |
+          set -o pipefail
+          go test -count=1 -v -timeout 6m -run '^TestV42(EicarZIPAndNestedZIPRegression|OfficialPublishedEicarZIPsReadOnly|PinnedExternalTechniqueExamplesReadOnly)$' ./... \
+            | tee "$RUNNER_TEMP/v42-independent-results.log"
+      - name: Publish summary logs and source metadata only
+        uses: actions/upload-artifact@v4
+        with:
+          name: SentinelGuard-4.2-Independent-Technique-Evidence
+          path: ${{ runner.temp }}/v42-independent-results.log
+          if-no-files-found: error
+          retention-days: 14
