@@ -101,6 +101,8 @@ func (a *App) runDefender(ctx context.Context, mode, custom string) error {
 		a.setCurrent(fmt.Sprintf("Microsoft Defender scanning %s (%d/%d). Detailed progress is unavailable.", root, i+1, len(roots)))
 		output := &cappedBuffer{max: 8 * 1024 * 1024}
 		cmd := exec.CommandContext(ctx, exe, "-Scan", "-ScanType", "3", "-File", root, "-DisableRemediation")
+		// Explicit Defender mode only: do not flash a console on Windows.
+		configureDefenderBackground(cmd)
 		cmd.Stdout = output
 		cmd.Stderr = output
 		runErr := cmd.Run()
