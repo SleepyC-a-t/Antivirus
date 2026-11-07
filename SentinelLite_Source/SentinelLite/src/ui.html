@@ -265,10 +265,18 @@ $('activeLaunch').onclick=async()=>{
    const details=r.reasons?.length?r.reasons.join('\n  • '):'No heuristic indicators found.';
    const warning=r.score>=50?'\n\nWARNING: SentinelGuard flagged potentially suspicious behavior.':'';
    const promptText='Scan & Run — REVIEW BEFORE LAUNCH\n\n'+r.path+
+     '\nSize: '+r.size+' bytes\nSHA-256: '+r.sha256+
+     '\nAuthenticode: '+r.authenticode+'\nPublisher: '+r.publisher+
+     '\nWindows origin: '+r.zone+
      '\nScore: '+r.score+' | '+r.severity+
+     '\nInspection: '+r.inspection+
      '\nIndicators:\n  • '+details+warning+
      '\n\n'+r.warning+'\n\nRun this program anyway?';
-   const approved=confirm(promptText);
+   let approved=confirm(promptText);
+   if(approved&&r.internetZone){
+      approved=confirm('SECOND CONFIRMATION — DOWNLOADED FROM THE INTERNET\n\n'+r.path+
+       '\nWindows marked this executable as internet/restricted-zone content. Your primary antivirus and Windows security prompts still apply. Run anyway?');
+   }
    await api('/api/active/launch-decision',{Ticket:r.ticket,Approve:approved});
    $('launchReviewStatus').textContent=approved?'Approved: Windows was asked to launch the selected executable.':'Launch cancelled; no program started by SentinelGuard.';
    await refreshActive();

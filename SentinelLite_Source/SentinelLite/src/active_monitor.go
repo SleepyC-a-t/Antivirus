@@ -26,6 +26,8 @@ type ActiveEvent struct {
     Action string `json:"action"`
     Score int `json:"score"`
     Reason string `json:"reason"`
+    SHA256 string `json:"sha256,omitempty"`
+    Decision string `json:"decision,omitempty"`
 }
 type ActiveStatus struct {
     Edition string `json:"edition"`
@@ -94,8 +96,11 @@ func (a *ActiveMonitor) setLaunchReview(value bool){
     a.mu.Unlock()
 }
 func (a *ActiveMonitor) recordLaunch(path,action,reason string,score int){
+    a.recordLaunchDigest(path,action,reason,score,"")
+}
+func (a *ActiveMonitor) recordLaunchDigest(path,action,reason string,score int,digest string){
     a.mu.Lock()
-    e:=ActiveEvent{At:time.Now(),Path:path,Action:action,Reason:reason,Score:score}
+    e:=ActiveEvent{At:time.Now(),Path:path,Action:action,Reason:reason,Score:score,SHA256:digest,Decision:action}
     a.appendEventLocked(e)
     if len(a.launchEvents)>=512 {
         copy(a.launchEvents,a.launchEvents[1:])
