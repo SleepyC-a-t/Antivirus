@@ -100,12 +100,30 @@ func (a *App) runDefender(ctx context.Context, mode, custom string) error {
 		}
 		a.setCurrent(fmt.Sprintf("Microsoft Defender scanning %s (%d/%d). Detailed progress is unavailable.", root, i+1, len(roots)))
 		output := &cappedBuffer{max: 8 * 1024 * 1024}
-		cmd := exec.CommandContext(ctx, exe, "-Scan", "-ScanType", "3", "-File", root, "-DisableRemediation")
-		// Explicit Defender mode only: do not flash a console on Windows.
-		configureDefenderBackground(cmd)
-		cmd.Stdout = output
-		cmd.Stderr = output
-		runErr := cmd.Run()
+        // Fail CLOSED if the OS job cannot be created/configured.
+        // Stop on the root helper also closes the job, killing descendants;
+        // Microsoft's separately managed antivirus service may continue.
+        job,jobErr:=newDefenderJob()
+        if jobErr!=nil{return fmt.Errorf("cannot isolate Defender helper: %w",jobErr)}
+        cmd:=exec.CommandContext(ctx,exe,"-Scan","-ScanType","3","-File",root,"-DisableRemediation")
+        configureDefenderBackground(cmd)
+        cmd.Stdout=output
+        cmd.Stderr=output
+        if err:=cmd.Start();err!=nil{
+            job.close()
+            return fmt.Errorf("could not start Defender helper: %w",err)
+        }
+        // Accounting records direct process creations initiated by this app,
+        // not all OS children or service processes. Heuristic scans remain 0.
+        a.recordChildStarted()
+        if err:=job.assign(cmd.Process.Pid);err!=nil{
+            _ = cmd.Process.Kill()
+            _ = cmd.Wait()
+            job.close()
+            return fmt.Errorf("Defender helper could not be placed in a kill-on-close job: %w",err)
+        }
+        runErr:=cmd.Wait()
+        job.close()
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
