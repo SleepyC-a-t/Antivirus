@@ -1,0 +1,12 @@
+# SentinelGuard 4.2 — manual Windows field-test checklist
+
+**Before testing:** keep Defender/Bitdefender active, use only harmless legitimate executables and EICAR as appropriate, and do not override Windows or browser malware warnings. Record Windows version, browser versions, EXE SHA-256, Git commit and any limitations.
+
+- [ ] **Scan & Run and Mark-of-the-Web:** use a known, trustworthy, ordinary downloaded EXE saved with a real NTFS `Zone.Identifier` alternate data stream (`ZoneId=3`), inspect its properties using PowerShell `Get-Content -LiteralPath 'C:\path\file.exe' -Stream Zone.Identifier`, then use the optional Scan & Run flow. Record SHA-256, file size, signature/publisher, Zone.Id and findings shown; verify that applicable Windows download warnings still appear. Do not approve elevation or override Defender to complete this test.
+- [ ] **Scan & Run refusal cases:** cancel review, modify/copy a harmless test EXE after approval but before launch, try an unsupported/oversize/locked file. Verify errors do not display a clean verdict and no executable starts without a valid one-time review.
+- [ ] **Chrome/Edge and Firefox blocking:** with only harmless controlled URL fixtures (not live phishing), test a known exact blocked URL and near-miss URL using a disposable local page or trusted reserved domain setup. Verify OFF removes blocking and an untrusted localhost responder cannot spoof the app.
+- [ ] **Pairing persistence/revocation:** pair extensions, close/restart SentinelGuard and browsers, verify pairing survives, then revoke and ensure the old pairing is rejected until re-pairing. Check the occupied-port error.
+- [ ] **Large download and rapid churn:** in a disposable test folder, write large benign data to `.crdownload` / `.part`, then rename to a completed file. Verify no premature inspection; trigger 100+ fast renames/copies, verify no missed settled files after reconciliation, and test long paths and OFF state. Check unsupported cloud/network folders are disclosed as not watched.
+- [ ] **Privacy export:** export both full and redacted JSON and inspect manually for your username, paths, private file names, timestamps, identifiers and hashes before sharing.
+
+Log observed versus expected outcomes (PASS / FAIL / NOT TESTED), screenshots with private data removed, startup errors, and browser extension versions. **This checklist has not been run interactively by CI.**
