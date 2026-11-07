@@ -57,29 +57,10 @@ func inspectV42PE(p string,st os.FileInfo,score *int,reasons *[]string){
    name:=strings.ToLower(strings.SplitN(sym,":",2)[0])
    imported[name]=true
  }
- alloc:=imported["virtualallocex"]||imported["ntallocatevirtualmemory"]
- remote:=imported["createremotethread"]||imported["ntcreatethreadex"]||imported["queueuserapc"]
- write:=imported["writeprocessmemory"]||imported["ntwritevirtualmemory"]
- indicator:=alloc&&remote&&write
- if !indicator&&!highEntropy{return}
- addition:=0
- if indicator{
-   addition+=48
-   *reasons=append(*reasons,"PE imports combine remote allocation, process-memory writing and remote thread/APC APIs (can be legitimate debugger software)")
- }
- if indicator&&highEntropy{
-   addition+=12
-   *reasons=append(*reasons,"PE has a high-entropy executable section alongside remote-memory APIs")
- }
- if indicator&&end>0&&st.Size()>end+256*1024&&st.Size()-end>st.Size()/4{
-   addition+=12
-   *reasons=append(*reasons,"PE has a substantial overlay alongside remote-memory APIs")
- }
- if highEntropy&&packedSection&&indicator{
-   addition+=12
-   *reasons=append(*reasons,"Executable section name resembles a packer alongside suspicious import combinations")
- }
- if addition==0{return} // entropy alone does not merit an alert
+ addition,indicators:=v42PEIndicators(imported,highEntropy,packedSection,
+    end>0&&st.Size()>end+256*1024&&st.Size()-end>st.Size()/4)
+ if addition==0{return}
+ *reasons=append(*reasons,indicators...)
  // A trusted Windows Authenticode signature is exculpatory context, not
  // proof of safety. Avoid expensive trust verification for every PE.
  if sig,_:=v42VerifySignature(p);strings.HasPrefix(sig,"Trusted"){
@@ -87,6 +68,30 @@ func inspectV42PE(p string,st os.FileInfo,score *int,reasons *[]string){
    *reasons=append(*reasons,"Trusted Authenticode signature reduces the PE heuristic score (not a guarantee of safety)")
  }
  if addition>0{*score+=addition}
+}
+// v42PEIndicators separates conservative policy from parsing, so both
+// suspicious import combinations and benign lookalikes can be tested
+// without embedding a real malware executable.
+func v42PEIndicators(imported map[string]bool,highEntropy,packed,overlay bool)(int,[]string){
+ alloc:=imported["virtualallocex"]||imported["ntallocatevirtualmemory"]
+ remote:=imported["createremotethread"]||imported["ntcreatethreadex"]||imported["queueuserapc"]
+ write:=imported["writeprocessmemory"]||imported["ntwritevirtualmemory"]
+ if !alloc||!remote||!write{return 0,nil}
+ addition:=48
+ why:=[]string{"PE imports combine remote allocation, process-memory writing and remote thread/APC APIs (possible debugger software)"}
+ if highEntropy {
+    addition+=12
+    why=append(why,"High-entropy PE executable section alongside remote-memory APIs")
+ }
+ if overlay{
+    addition+=12
+    why=append(why,"Substantial PE overlay alongside remote-memory APIs")
+ }
+ if packed&&highEntropy{
+    addition+=12
+    why=append(why,"Packer-like executable section name alongside suspicious imports")
+ }
+ return addition,why
 }
 func inspectV42PDF(buf []byte,score *int,reasons *[]string){
  if len(buf)<16||!bytes.HasPrefix(buf,[]byte("%PDF-")){return}
