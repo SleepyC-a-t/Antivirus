@@ -2,9 +2,6 @@ package main
 
 import (
 	"crypto/rand"
-    "crypto/hmac"
-    "crypto/sha256"
-    "encoding/hex"
 	"crypto/subtle"
 	"embed"
 	"encoding/base64"
