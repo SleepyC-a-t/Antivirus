@@ -14,7 +14,9 @@ foreach ($pair in @(@('old',$Baseline),@('patched',$Patched))) {
  $tag,$root=$pair
  $dir=Join-Path $root 'SentinelLite_Source/SentinelLite/src'
  Copy-Item $src (Join-Path $dir 'v43_forensic_scan_test.go') -Force
- Copy-Item $survey (Join-Path $dir 'v42_windows_benign_corpus_test.go') -Force
+ if ($tag -ne 'patched') {
+   Copy-Item $survey (Join-Path $dir 'v42_windows_benign_corpus_test.go') -Force
+ }
  $metadata=Join-Path $dir 'launch_metadata_windows.go'
  $raw=[IO.File]::ReadAllText($metadata)
  $needle='func v42VerifySignature(path string)(string,string){'
