@@ -24,7 +24,7 @@ func TestV41LaunchAuditIncludedInActiveExport(t *testing.T){
   } `json:"status"`
  }
  if err:=json.Unmarshal(out.Body.Bytes(),&data);err!=nil{t.Fatal(err)}
- if data.Version!="4.1"||data.Status.LaunchReviews!=1||data.Status.LaunchDenied!=1||len(data.Status.Events)!=2{
+ if data.Version!="4.2"||data.Status.LaunchReviews!=1||data.Status.LaunchDenied!=1||len(data.Status.Events)!=2{
   t.Fatalf("launch events missing from JSON report: %+v",data)
  }
 }

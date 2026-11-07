@@ -163,7 +163,7 @@ func TestStage12ResourceMetricsResetAndReport(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
 		t.Fatal(err)
 	}
-	if out.Version != "4.1" || out.Status.Resources.Samples < 2 {
+	if out.Version != "4.2" || out.Status.Resources.Samples < 2 {
 		t.Fatalf("missing report metrics %+v", out)
 	}
 	if _, err := app.begin("heuristic:custom"); err != nil {

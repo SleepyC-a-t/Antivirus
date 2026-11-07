@@ -28,7 +28,7 @@ func TestV4IntegratedManualAndLiveReport(t *testing.T){
         } `json:"liveProtection"`
     }
     if err:=json.Unmarshal(response.Body.Bytes(),&got);err!=nil{t.Fatal(err)}
-    if got.Version!="4.1"||got.LiveProtection.Enabled||got.LiveProtection.AutoQuarantine {
+    if got.Version!="4.2"||got.LiveProtection.Enabled||got.LiveProtection.AutoQuarantine {
         t.Fatalf("wrong unified report fields: %+v",got)
     }
 }
