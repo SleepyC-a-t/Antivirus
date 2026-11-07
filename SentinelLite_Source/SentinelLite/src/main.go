@@ -90,7 +90,7 @@ func (s *Server) secure(next http.Handler) http.Handler {
 			t = r.URL.Query().Get("token")
 		}
 		authorized:=subtle.ConstantTimeCompare([]byte(t),[]byte(s.token))==1
-        if !authorized && edition=="active" && r.URL.Path=="/api/active/extension-status" {
+        if !authorized && (edition=="active"||edition=="integrated") && r.URL.Path=="/api/active/extension-status" {
             authorized=s.extensionToken!=""&&subtle.ConstantTimeCompare([]byte(t),[]byte(s.extensionToken))==1
         }
         if !authorized {

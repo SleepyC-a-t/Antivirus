@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "SentinelGuard Active — Browser Protection (Preview)",
-  "version": "0.1.0",
-  "description": "Optional local browser companion. Blocks exact URL matches from an opt-in phishing feed when paired SentinelGuard Active is ON.",
+  "name": "SentinelGuard 4.0 — Chrome/Edge Web Protection",
+  "version": "4.0.0",
+  "description": "Optional Chromium companion for SentinelGuard 4.0; blocks opted-in known phishing URLs.",
   "permissions": [
     "storage",
     "alarms",
@@ -17,15 +17,6 @@
     "default_title": "SentinelGuard Active"
   },
   "background": {
-    "scripts": [
-      "background.js"
-    ],
     "service_worker": "background.js"
-  },
-  "browser_specific_settings": {
-    "gecko": {
-      "id": "sentinelguard-active-preview@local.invalid",
-      "strict_min_version": "128.0"
-    }
   }
 }

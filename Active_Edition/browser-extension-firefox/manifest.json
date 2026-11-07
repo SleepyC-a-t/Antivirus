@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "SentinelGuard 4.0 — Firefox Web Protection",
+  "version": "4.0.0",
+  "description": "Optional Chromium companion for SentinelGuard 4.0; blocks opted-in known phishing URLs.",
+  "permissions": [
+    "storage",
+    "alarms",
+    "declarativeNetRequest"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1/*",
+    "https://openphish.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "SentinelGuard Active"
+  },
+  "background": {
+    "scripts": [
+      "background.js"
+    ]
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "sentinelguard-4.0@local.invalid",
+      "strict_min_version": "128.0"
+    }
+  }
+}
