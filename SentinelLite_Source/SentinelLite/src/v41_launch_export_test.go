@@ -28,3 +28,25 @@ func TestV41LaunchAuditIncludedInActiveExport(t *testing.T){
   t.Fatalf("launch events missing from JSON report: %+v",data)
  }
 }
+
+func TestV41LaunchAuditSeparateFromDownloadHistory(t *testing.T){
+ m:=newActiveMonitor(nil)
+ m.recordLaunch("example.exe","launch-reviewed","test",65)
+ m.recordLaunch("example.exe","launch-cancelled","test",65)
+ for i:=0;i<350;i++{
+  m.mu.Lock()
+  m.appendEventLocked(ActiveEvent{Action:"inspected-clean"})
+  m.mu.Unlock()
+ }
+ st:=m.snapshot()
+ if len(st.LaunchEvents)!=2{t.Fatalf("launch approvals lost in download history: %+v",st.LaunchEvents)}
+ if st.LaunchEvents[1].Action!="launch-cancelled"{t.Fatal("last launch decision absent")}
+ for i:=0;i<600;i++{m.recordLaunch("sample.exe","launch-cancelled","synthetic stress",0)}
+ st=m.snapshot()
+ if len(st.LaunchEvents)!=512||st.LaunchLogOmitted!=90{
+  t.Fatalf("launch ring buffer capacity accounting failed: len=%d omitted=%d",len(st.LaunchEvents),st.LaunchLogOmitted)
+ }
+ m.clearHistory()
+ st=m.snapshot()
+ if len(st.LaunchEvents)!=0||st.LaunchLogOmitted!=0{t.Fatal("clear history did not clear launch audit")}
+}
