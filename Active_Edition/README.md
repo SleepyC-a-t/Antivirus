@@ -1,6 +1,6 @@
-# SentinelGuard 4.0 — integrated Windows desktop security center
+# SentinelGuard 4.1 — integrated Windows desktop security center
 
-SentinelGuard 4.0 combines the existing manual scanner and its experimental
+SentinelGuard 4.1 combines the existing manual scanner and its experimental
 opt-in Active monitor into **one Windows desktop application**. The dashboard
 runs inside a native Windows WebView2 window (Microsoft Edge WebView2 Runtime)
 rather than a tab in Firefox, Chrome or Edge.
@@ -8,7 +8,7 @@ rather than a tab in Firefox, Chrome or Edge.
 ## Starting SentinelGuard
 
 1. Extract the full ZIP.
-2. Start `SentinelGuard-4.0.exe`. No separate server, browser or Python is
+2. Start `SentinelGuard-4.1.exe`. No separate server, browser or Python is
    needed on your Windows PC. Windows 10/11 must have Microsoft Edge WebView2
    Runtime installed.
 3. **Live protection is OFF by default on EVERY launch.** Manual scans,
@@ -77,3 +77,63 @@ Redact these before sharing publicly.
 **Development:** Python is used only by CI to regenerate Claude's inert
 test fixtures in a temporary directory. No Python interpreter or test
 corpus is included in the production application.
+
+## SentinelGuard 4.1 security options and privacy
+
+**Priority 1 — browser URL blocking:** The optional Firefox/Chrome/Edge
+extension uses anchored literal URL filters rather than regex rules; this
+avoids the Chrome 1,000-regex-rule cap. An update error keeps working
+rules when possible and reports degraded status. When protection is OFF,
+the extension removes its blocking rules at the next synchronization.
+
+**Persistent pairing:** On Windows, the browser pairing credential is
+encrypted using the user-account-scoped Windows DPAPI and stored under
+`%LOCALAPPDATA%\SentinelLite\browser-pair.dpapi`. The browser extension
+keeps its token in browser extension storage. The API listens only on
+`127.0.0.1:17654`, so the extension can reconnect after restarting
+SentinelGuard. Use **Revoke browser pairing** to invalidate existing
+extensions. If the port is already occupied, close the conflicting app.
+
+**Priority 2 — downloads:** Windows change notifications now wake the
+monitor; a periodic folder reconciliation covers missed notifications.
+Each completed file inspection, including clean/no-indicator files, is
+recorded in Recent protection events and export JSON. The events may
+contain your private filenames and folder paths.
+
+**Priority 3 — optional Scan & Run:** Separate opt-in switch, OFF by
+default. Select a local `.exe` in the Windows picker, inspect the file,
+then approve or cancel the launch in a confirmation dialog. An approval
+ticket expires after 90 seconds, is usable once, and is bound to the
+executable's SHA-256 and size. The app checks the file again before
+starting it; a change requires a new review. A residual check-to-execution
+race remains possible. No system-wide execution interception, driver,
+Windows policy modification, network executable, scripts or shortcuts.
+Programs launched using Explorer or other applications do not pass
+through this prompt. SentinelGuard does not guarantee an executable safe.
+
+**Priority 4 — validation:** The exact Claude inert sample corpus is
+generated only in isolated CI tests, never executed. Original Stage
+6–12 synthetic test matrices remain. We also scan installed Windows
+system executables as real benign controls (without launching them).
+EICAR checks test a standard harmless antivirus test signature; they
+do not establish independent detection rates against real malware.
+Use established primary antivirus and Windows security features.
+
+New Scan & Run events include selected program path, timestamp, heuristic
+score, whether the user declined or approved, execution failures and
+file-change/expiry denials. Turning on active scanning does NOT enable
+Scan & Run or auto-quarantine; both are separately OFF by default.
+
+### Optional external holdout evaluation (development only)
+
+A separate third-party inert corpus can be evaluated without running its
+samples. Create `labels.json` in the corpus directory containing an array:
+`[{"file":"example.exe","label":"suspicious"},{"file":"harmless.txt","label":"benign"}]`.
+
+From the **Go source directory**, set
+`SENTINELGUARD_EXTERNAL_CORPUS` to the absolute corpus folder path,
+then run `go test -run '^TestV41ExternalLabeledCorpus$' -v`.
+The tool prints TP/FN/FP/TN, never executes samples and rejects linked,
+traversal or malformed entries. This evaluation does not download malware,
+does not make the external sample labels reliable, and is not a substitute
+for accredited antivirus laboratory testing.
