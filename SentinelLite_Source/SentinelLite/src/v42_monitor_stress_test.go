@@ -37,16 +37,18 @@ func TestV42BrowserPartialDownloadsNotInspectedUntilRename(t *testing.T){
  m:=newActiveMonitor(nil);m.watched=[]string{dir}
  if err:=m.setEnabled(true);err!=nil{t.Fatal(err)}
  for _,suffix:=range []string{".crdownload",".part"}{
+  before:=m.snapshot().Inspected
   p:=filepath.Join(dir,"inert"+suffix)
   if err:=os.WriteFile(p,[]byte("harmless"),0600);err!=nil{t.Fatal(err)}
   older:=time.Now().Add(-8*time.Second)
   _=os.Chtimes(p,older,older)
   for i:=0;i<3;i++{m.pollOnce()}
-  if m.snapshot().Inspected!=0{t.Fatal("partial browser download inspected prematurely")}
+  if m.snapshot().Inspected!=before{t.Fatal("partial browser download inspected prematurely")}
   done:=p+".txt"
   if err:=os.Rename(p,done);err!=nil{t.Fatal(err)}
   _=os.Chtimes(done,older,older)
   m.pollOnce();m.pollOnce()
+  if m.snapshot().Inspected!=before+1{t.Fatal("final renamed browser download was not inspected exactly once")}
  }
  if m.snapshot().Inspected!=2 {t.Fatalf("completed download count %d",m.snapshot().Inspected)}
 }
