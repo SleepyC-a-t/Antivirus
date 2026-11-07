@@ -1,64 +1,16 @@
 package main
 
 import (
-    "go/ast"
-    "go/parser"
-    "go/token"
-    "os"
-    "path/filepath"
-    "strconv"
-    "strings"
-    "testing"
+ "os"
+ "path/filepath"
+ "testing"
 )
 
-// Prevent regressions in which passive per-file inspection starts an
-// interpreter. Windows GUI binaries can make such children flash consoles.
-// This is a structural lock, not empirical proof of all Windows behavior.
+// Preserve the historical test name, but DO NOT exempt entire files from
+// scanning. The replacement checks function-level process API allowlists,
+// native NewProc handles and scanner call-graph reachability.
 func TestSafetyPassiveScanCannotSpawnShells(t *testing.T) {
-    entries, err := os.ReadDir(".")
-    if err != nil { t.Fatal(err) }
-    explicitlyUserInitiated := map[string]bool{
-        "defender.go": true, // selected Defender engine; windowless cmd attribute
-        "os_windows.go": true, // explicit Open Location/Browser/Security actions
-        "launch_windows.go": true, // one-time approved Scan & Run only
-    }
-    // These helpers need *exec.Cmd as a TYPE, but still may not spawn or
-    // start a process themselves. Unlike the three explicit user-action
-    // entrypoints, they remain under the AST process-launch call ban.
-    allowedExecTypeImports := map[string]bool{
-        "defender_command_windows.go": true,
-        "defender_command_other.go": true,
-    }
-    scanned := 0
-    for _,entry := range entries {
-        filename:=entry.Name()
-        if entry.IsDir() || !strings.HasSuffix(filename,".go") || strings.HasSuffix(filename,"_test.go") {continue}
-        file,err:=parser.ParseFile(token.NewFileSet(),filename,nil,0)
-        if err!=nil{t.Fatalf("parse %s: %v",filename,err)}
-        scanned++
-        for _,imp:=range file.Imports{
-            v,err:=strconv.Unquote(imp.Path.Value)
-            if err!=nil {t.Fatal(err)}
-            if v=="os/exec" && !explicitlyUserInitiated[filename] && !allowedExecTypeImports[filename] {
-                t.Errorf("%s: passive module imports subprocess launcher os/exec",filename)
-            }
-        }
-        if explicitlyUserInitiated[filename] {continue}
-        ast.Inspect(file,func(n ast.Node)bool{
-            switch expr:=n.(type) {
-            case *ast.CallExpr:
-                selector,ok:=expr.Fun.(*ast.SelectorExpr)
-                if !ok{return true}
-                switch selector.Sel.Name {
-                case "Command","CommandContext","StartProcess","CreateProcess",
-                    "ShellExecute","ShellExecuteEx","ShellExecuteExW":
-                    t.Errorf("%s: prohibited process-launch call %s in passive module",filename,selector.Sel.Name)
-                }
-            }
-            return true
-        })
-    }
-    if scanned < 20 {t.Fatalf("only %d source files scanned; subprocess lock not meaningful",scanned)}
+ TestSecurityProcessCreationFunctionAllowlistAndReachability(t)
 }
 
 // Inspect ordinary inert content through the same custom-scan worker pipeline
