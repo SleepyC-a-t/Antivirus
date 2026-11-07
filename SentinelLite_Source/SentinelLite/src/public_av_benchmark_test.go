@@ -108,6 +108,6 @@ func TestPublicAMTSOSimulatedPUAReadOnly(t *testing.T){
     finding:=inspectFileProtected(path,stat,nil)
     score,reason:=0,""
     if finding!=nil{score=finding.Score;reason=strings.Join(finding.Reasons," | ")}
-    t.Logf("PUBLIC_AMTSO_PUA_FILE detected=%t score=%d size=%d sha256=%s reasons=%q source=%q",finding!=nil,score,stat.Size(),sha,"https://amtso.eicar.org/PotentiallyUnwanted.exe")
+    t.Logf("PUBLIC_AMTSO_PUA_FILE detected=%t score=%d size=%d sha256=%s reasons=%q source=%q",finding!=nil,score,stat.Size(),sha,reason,"https://amtso.eicar.org/PotentiallyUnwanted.exe")
     t.Log("AMTSO PUA is a published harmless PUA simulation. A miss does not imply a known malware family was missed.")
 }
