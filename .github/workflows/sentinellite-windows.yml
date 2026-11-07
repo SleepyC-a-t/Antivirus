@@ -57,6 +57,15 @@ jobs:
           go build -trimpath -ldflags '-s -w -H windowsgui' -o $exe .
           if ($LASTEXITCODE -ne 0 -or !(Test-Path $exe)) { throw 'Windows desktop build failed' }
           Get-FileHash -Algorithm SHA256 $exe | Format-List
+      - name: Assert compiled executable does not contain legacy PowerShell publisher command
+        run: |
+          $exe = Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.2.exe'
+          $bytes = [System.IO.File]::ReadAllBytes($exe)
+          $text = [System.Text.Encoding]::ASCII.GetString($bytes)
+          if ($text.Contains('Get-AuthenticodeSignature')) {
+            throw 'Security regression: old PowerShell publisher-inspection command found in compiled executable'
+          }
+          Write-Host 'PASS: compiled Windows executable has no legacy PowerShell publisher command'
       - name: Headless Windows startup smoke test
         run: |
           $exe = Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.2.exe'
