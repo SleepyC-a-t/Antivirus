@@ -90,7 +90,7 @@ func (s *Server) secure(next http.Handler) http.Handler {
 			return
 		}
 		if o := r.Header.Get("Origin"); o != "" && o != "http://"+s.address {
-            allowExtension := (edition=="integrated"||edition=="active") && (r.URL.Path=="/api/active/extension-status" || r.URL.Path=="/api/active/extension-challenge") &&
+            allowExtension := (edition=="integrated"||edition=="active") && r.URL.Path=="/api/active/extension-challenge" &&
                 (strings.HasPrefix(o,"moz-extension://") || strings.HasPrefix(o,"chrome-extension://"))
             if !allowExtension {
                 http.Error(w,"invalid origin",403);return
@@ -109,12 +109,6 @@ func (s *Server) secure(next http.Handler) http.Handler {
         if !authorized && r.URL.Path=="/api/active/extension-challenge" && r.Method==http.MethodPost {
             origin:=r.Header.Get("Origin")
             authorized=(strings.HasPrefix(origin,"moz-extension://")||strings.HasPrefix(origin,"chrome-extension://"))
-        }
-        if !authorized && (edition=="active"||edition=="integrated") && r.URL.Path=="/api/active/extension-status" {
-            authorized=func()bool{
-                pair,_:=s.pairSnapshot()
-                return pair!=""&&subtle.ConstantTimeCompare([]byte(t),[]byte(pair))==1
-            }()
         }
         if !authorized {
             http.Error(w,"access token required",403);return
