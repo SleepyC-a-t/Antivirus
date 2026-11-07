@@ -13,7 +13,9 @@ import(
 func TestV42PERiskPolicyPositiveAndLookalikes(t *testing.T){
  injection:=map[string]bool{"virtualallocex":true,"writeprocessmemory":true,"createremotethread":true}
  score,_:=v42PEIndicators(injection,false,false,false)
- if score<40{t.Fatalf("correlated remote injection APIs unrecognized: %d",score)}
+ if score<20||score>=40{t.Fatalf("uncorroborated PE imports must be advisory (<40) but nonzero; got %d",score)}
+ corroborated,_:=v42PEIndicators(injection,true,false,false)
+ if corroborated<40{t.Fatalf("entropy+triad did not exceed 40-point review threshold: %d",corroborated)}
  benign:=[]map[string]bool{
    {"virtualalloc":true,"virtualprotect":true},
    {"virtualallocex":true,"readprocessmemory":true},
