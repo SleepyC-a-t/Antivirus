@@ -1,4 +1,4 @@
-name: SentinelGuard 4.0 — Browser companion validation
+name: SentinelGuard 4.1 — Browser companion validation
 on:
   pull_request:
     paths:
@@ -34,3 +34,5 @@ jobs:
           node --check Active_Edition/browser-extension/popup.js
           node --check Active_Edition/browser-extension-firefox/background.js
           node --check Active_Edition/browser-extension-firefox/popup.js
+      - name: Offline browser rule-limit, HMAC challenge and failure-recovery tests
+        run: node Active_Edition/browser-extension/url_rules_test.cjs
