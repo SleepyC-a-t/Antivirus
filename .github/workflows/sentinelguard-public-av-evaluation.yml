@@ -1,0 +1,82 @@
+name: SentinelGuard 4.1 — public AV test data and exact legacy fixture audit
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/sentinelguard-public-av-evaluation.yml'
+      - 'SentinelLite_Source/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  isolated-public-sample-validation:
+    name: Read-only public EICAR/AMTSO tests and original corpus regressions
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+        working-directory: SentinelLite_Source/SentinelLite/src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: SentinelLite_Source/SentinelLite/src/go.mod
+          cache: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Create temporary read-only test evidence directory
+        run: mkdir -p "$RUNNER_TEMP/sentinelguard-public-av/source"
+
+      - name: Try public AMTSO benign PUA test binary (never execute it)
+        run: |
+          TEST_FILE="$RUNNER_TEMP/AMTSO-PotentiallyUnwanted.exe"
+          if curl --fail --location --silent --show-error --connect-timeout 8 --max-time 25 --max-filesize 5242880 "https://amtso.eicar.org/PotentiallyUnwanted.exe" --output "$TEST_FILE" ; then
+            if python -c 'import pathlib,sys;d=pathlib.Path(sys.argv[1]).read_bytes();sys.exit(0 if 64<=len(d)<=5242880 and d.startswith(b"MZ") else 2)' "$TEST_FILE"; then
+              echo "SENTINELGUARD_AMTSO_PUA_FILE=$TEST_FILE" >> "$GITHUB_ENV"
+              echo "AMTSO file retrieved, verified as a bounded PE-shaped file; static scan only, no execution"
+            else
+              echo "AMTSO returned an unrecognized or non-PE response; test will be SKIPPED"
+              rm -f "$TEST_FILE"
+            fi
+          else
+            echo "AMTSO could not be downloaded; test will be SKIPPED, not scored as missed"
+            rm -f "$TEST_FILE"
+          fi
+
+      - name: Run published harmless EICAR, optional AMTSO, old Stage 6–12 and exact Claude corpus tests
+        run: |
+          mkdir -p "$RUNNER_TEMP/sentinelguard-public-av"
+          set -o pipefail
+          go test -count=1 -json -timeout 9m -run '^Test(Public|Stage6|Stage9|Stage10|Stage11|Stage12|V4ActiveClaudeFullInertDownloadSimulation)' ./... | tee "$RUNNER_TEMP/sentinelguard-public-av/evaluation-go-test.jsonl"
+
+      - name: Record all exact test and threat-generator source code
+        run: |
+          SRC="$RUNNER_TEMP/sentinelguard-public-av/source"
+          for f in \
+            public_av_benchmark_test.go \
+            public_av_old_corpus_audit_test.go \
+            eicar_fixture_test.go \
+            stage6_threat_matrix_test.go \
+            stage9_eicar_test.go \
+            stage9_broad_matrix_test.go \
+            stage10_detection_test.go \
+            stage11_detection_test.go \
+            stage12_validation_test.go \
+            claude_corpus_v4_test.go \
+            testdata/claude_inert_generator.py; do
+            cp -- "$f" "$SRC/$(basename "$f")"
+          done
+          (cd "$SRC" && sha256sum * > ../source-hashes.txt)
+          git rev-parse HEAD > "$RUNNER_TEMP/sentinelguard-public-av/commit.txt"
+          echo "Exact corpus source files were collected; no generated binaries or executable test samples are uploaded."
+
+      - name: Upload code and test logs for independently reviewable report
+        uses: actions/upload-artifact@v4
+        with:
+          name: SentinelGuard-v4.1-Public-AV-Evaluation-Evidence
+          path: \${{ runner.temp }}/sentinelguard-public-av/
+          retention-days: 14
+          if-no-files-found: error
