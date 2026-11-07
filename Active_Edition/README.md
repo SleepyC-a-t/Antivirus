@@ -1,6 +1,6 @@
-# SentinelGuard 4.1 — integrated Windows desktop security center
+# SentinelGuard 4.2 — integrated Windows desktop security center
 
-SentinelGuard 4.1 combines the existing manual scanner and its experimental
+SentinelGuard 4.2 combines the existing manual scanner and its experimental
 opt-in Active monitor into **one Windows desktop application**. The dashboard
 runs inside a native Windows WebView2 window (Microsoft Edge WebView2 Runtime)
 rather than a tab in Firefox, Chrome or Edge.
@@ -8,7 +8,7 @@ rather than a tab in Firefox, Chrome or Edge.
 ## Starting SentinelGuard
 
 1. Extract the full ZIP.
-2. Start `SentinelGuard-4.1.exe`. No separate server, browser or Python is
+2. Start `SentinelGuard-4.2.exe`. No separate server, browser or Python is
    needed on your Windows PC. Windows 10/11 must have Microsoft Edge WebView2
    Runtime installed.
 3. **Live protection is OFF by default on EVERY launch.** Manual scans,
@@ -43,8 +43,8 @@ required for local file scanning.
 - In the extension popup enable the **OpenPhish Community Feed** checkbox
   if you agree to the feed provider's terms and IP-address disclosure.
 - Blocking state can take up to about a minute to reflect changes to the
-  application's protection switch. Pairing must be renewed after restarting
-  the application because the secure local port/key changes per launch.
+  application's protection switch. Pairing persists after restarting
+  the application because the user-scoped encrypted credential is reused.
 
 The feed's terms restrict community-feed use to personal/noncommercial
 use. No website contents, passwords, history or files you download are
@@ -78,7 +78,7 @@ Redact these before sharing publicly.
 test fixtures in a temporary directory. No Python interpreter or test
 corpus is included in the production application.
 
-## SentinelGuard 4.1 security options and privacy
+## SentinelGuard 4.2 security options and privacy
 
 **Priority 1 — browser URL blocking:** The optional Firefox/Chrome/Edge
 extension uses anchored literal URL filters rather than regex rules; this

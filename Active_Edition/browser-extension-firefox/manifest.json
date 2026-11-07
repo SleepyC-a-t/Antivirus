@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "SentinelGuard 4.1 — Firefox Web Protection",
-  "version": "4.1.0",
-  "description": "Optional Firefox companion for SentinelGuard 4.1; blocks opted-in known phishing URLs.",
+  "name": "SentinelGuard 4.2 — Firefox Web Protection",
+  "version": "4.2.0",
+  "description": "Optional Firefox companion for SentinelGuard 4.2; blocks opted-in known phishing URLs.",
   "permissions": [
     "storage",
     "alarms",
@@ -14,7 +14,7 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "SentinelGuard 4.1"
+    "default_title": "SentinelGuard 4.2"
   },
   "background": {
     "scripts": [
@@ -23,7 +23,7 @@
   },
   "browser_specific_settings": {
     "gecko": {
-      "id": "sentinelguard-4.0@local.invalid",
+      "id": "sentinelguard-4.2@local.invalid",
       "strict_min_version": "128.0"
     }
   }

@@ -1,4 +1,4 @@
-name: SentinelGuard 4.1 — Browser companion validation
+name: SentinelGuard 4.2 — Browser companion validation
 on:
   pull_request:
     paths:

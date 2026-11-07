@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "SentinelGuard 4.1 — Chrome/Edge Web Protection",
-  "version": "4.1.0",
-  "description": "Optional Chromium companion for SentinelGuard 4.1; blocks opted-in known phishing URLs.",
+  "name": "SentinelGuard 4.2 — Chrome/Edge Web Protection",
+  "version": "4.2.0",
+  "description": "Optional Chromium companion for SentinelGuard 4.2; blocks opted-in known phishing URLs.",
   "permissions": [
     "storage",
     "alarms",
@@ -14,7 +14,7 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "SentinelGuard 4.1"
+    "default_title": "SentinelGuard 4.2"
   },
   "background": {
     "service_worker": "background.js"
