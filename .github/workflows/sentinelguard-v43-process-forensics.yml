@@ -44,6 +44,8 @@ jobs:
             Push-Location "$tag/SentinelLite_Source/SentinelLite/src"
             try {
               $exe=Join-Path $env:RUNNER_TEMP "SentinelGuard-$tag-FORENSICS-DO-NOT-RUN.exe"
+              go mod tidy
+              if ($LASTEXITCODE -ne 0) {throw "$tag dependency resolution failed"}
               go build -trimpath -ldflags '-s -w -H windowsgui' -o $exe .
               if ($LASTEXITCODE -ne 0) {throw "$tag Windows build failed"}
               $hash=(Get-FileHash -Algorithm SHA256 $exe).Hash.ToLowerInvariant()
