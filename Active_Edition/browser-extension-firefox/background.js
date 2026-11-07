@@ -3,11 +3,12 @@
    Firefox uses background.scripts; Chromium uses service_worker. */
 const ext = typeof browser !== "undefined" ? browser : chrome;
 const FEED = "https://openphish.com/feed.txt";
+const RULES_VERSION = 2;
 const SYNC_ALARM = "sentinel-active-sync";
-const MAX_RULES = 1200;
+const MAX_RULES = 1200; // urlFilter rules avoid Chrome's 1000 regex-rule cap
 const MAX_FEED_AGE_MS = 12 * 60 * 60 * 1000;
 
-async function stored() { return await ext.storage.local.get(["pair","useFeed","cachedURLs","lastFeedAt","status"]); }
+async function stored() { return await ext.storage.local.get(["pair","useFeed","cachedURLs","lastFeedAt","status","rulesVersion"]); }
 async function setStatus(message, enabled, count) {
   await ext.storage.local.set({status:{message,enabled,count,checkedAt:Date.now()}});
 }
@@ -41,9 +42,11 @@ function safePhishingURLs(feedText) {
   return urls;
 }
 function toRules(urls) {
+  // Chrome limits *regexFilter* dynamic rules to 1000; urlFilter is not
+  // subject to that special cap. '|' anchors both ends of the URL.
   return urls.slice(0,MAX_RULES).map((url,index)=>({
     id:1000+index,priority:1,action:{type:"block"},
-    condition:{regexFilter:"^"+escapeRegExp(url)+"$",isUrlFilterCaseSensitive:false,
+    condition:{urlFilter:"|"+url+"|",isUrlFilterCaseSensitive:true,
       resourceTypes:["main_frame","sub_frame"]}
   }));
 }
@@ -95,7 +98,7 @@ async function syncProtection() {
     if(!urls.length || Date.now()-(state.lastFeedAt||0)>=MAX_FEED_AGE_MS) {
       try{
         urls=await fetchFeed();
-        await ext.storage.local.set({cachedURLs:urls,lastFeedAt:Date.now()});
+        await ext.storage.local.set({cachedURLs:urls,lastFeedAt:Date.now(),rulesVersion:RULES_VERSION});
       }catch(error){
         // Fail safe: do not promise active website protection without a
         // working feed. Previously cached rules remain for <=24 hours.
@@ -107,16 +110,19 @@ async function syncProtection() {
     const desired=toRules(urls);
     const current=await ext.declarativeNetRequest.getDynamicRules();
     // Avoid updating the persistent dynamic rules every alarm.
-    if(current.length!==desired.length ||
-       current.some((rule,i)=>rule.condition.regexFilter!==desired[i]?.condition.regexFilter)){
+    if(state.rulesVersion!==RULES_VERSION || current.length!==desired.length ||
+       current.some((rule,i)=>rule.condition.urlFilter!==desired[i]?.condition.urlFilter)){
       await ext.declarativeNetRequest.updateDynamicRules({
         removeRuleIds:current.map(r=>r.id),addRules:desired
       });
     }
     await setStatus("Blocking known phishing URLs (exact matches)",true,desired.length);
   })().catch(async error=>{
-    await removeAllRules().catch(()=>{});
-    await setStatus("Protection error: "+String(error.message||error),false,0);
+    // Do not destroy a working ruleset after a transient feed or rule-update
+    // failure. The status must disclose degraded protection and real rule count.
+    const retained=await ext.declarativeNetRequest.getDynamicRules().catch(()=>[]);
+    await setStatus("Update error (existing rules retained): "+String(error.message||error),
+                    retained.length>0,retained.length);
   }).finally(()=>{running=null});
   return running;
 }
