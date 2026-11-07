@@ -113,24 +113,24 @@ jobs:
           $docs=Join-Path $package 'docs'
           New-Item -ItemType Directory -Force -Path $docs | Out-Null
           Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'docs/SentinelGuard-4.2-*.md') $docs
-          $zip=Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.2.zip'
+          $zip=Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.2-SECURITY-CANDIDATE-REVIEW-ONLY.zip'
           Compress-Archive -Path "$package/*" -DestinationPath $zip -CompressionLevel Optimal -Force
           $hash=(Get-FileHash -Algorithm SHA256 $zip).Hash.ToLowerInvariant()
-          "$hash  SentinelGuard-4.2.zip" | Set-Content -Encoding ascii (Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.2.SHA256')
+          "$hash  SentinelGuard-4.2-SECURITY-CANDIDATE-REVIEW-ONLY.zip" | Set-Content -Encoding ascii (Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.2.SHA256')
           Get-Content (Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.2.SHA256')
       - name: Publish v4.2 CI-built ZIP and checksum
         uses: actions/upload-artifact@v4
         with:
-          name: SentinelGuard-4.2-CI-Build-ZIP
+          name: SentinelGuard-4.2-REVIEW-ONLY-CI-ZIP
           path: |
-            ${{ runner.temp }}/SentinelGuard-4.2.zip
+            ${{ runner.temp }}/SentinelGuard-4.2-SECURITY-CANDIDATE-REVIEW-ONLY.zip
             ${{ runner.temp }}/SentinelGuard-4.2.SHA256
           if-no-files-found: error
           retention-days: 30
-      - name: Publish verified v4.2 Windows CI build
+      - name: Publish unreviewed v4.2 Windows CI build
         uses: actions/upload-artifact@v4
         with:
-          name: SentinelGuard-4.2-Windows-CI-Built
+          name: SentinelGuard-4.2-Windows-CI-Built-NOT-FIELD-TESTED
           path: ${{ runner.temp }}/SentinelGuard-4.2/
           if-no-files-found: error
           retention-days: 14
