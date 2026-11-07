@@ -45,7 +45,9 @@ func folderHRESULT(hr uintptr, operation string) error {
 // Choose a folder through the native Windows Explorer-style Common Item Dialog.
 // It runs on a dedicated locked STA thread; the scanner never invokes
 // PowerShell, executes files or asks the browser to access local folders.
-func chooseScanFolder() (string, error) {
+func chooseScanFolder() (string, error) {return chooseNativeItem(true)}
+func chooseExecutableFile() (string,error) {return chooseNativeItem(false)}
+func chooseNativeItem(folder bool) (string, error) {
     runtime.LockOSThread()
     defer runtime.UnlockOSThread()
     const coinitApartmentThreaded = 0x2
@@ -74,15 +76,21 @@ func chooseScanFolder() (string, error) {
     const fosPickFolders = 0x20
     const fosForceFileSystem = 0x40
     const fosPathMustExist = 0x800
-    if err := folderHRESULT(callFolderCOM(dialog, 9, uintptr(opts | fosPickFolders | fosForceFileSystem | fosPathMustExist)), "Configure folder picker"); err != nil {
+    flags:=uint32(opts|fosForceFileSystem|fosPathMustExist)
+    if folder {flags|=fosPickFolders} else {flags &^= fosPickFolders}
+    if err := folderHRESULT(callFolderCOM(dialog, 9, uintptr(flags)), "Configure folder picker"); err != nil {
         return "", err
     }
-    title, err := syscall.UTF16PtrFromString("Choose a folder for SentinelGuard to scan")
+    dialogTitle:="Choose a folder for SentinelGuard to scan"
+    if !folder {dialogTitle="Choose a program for SentinelGuard Scan & Run"}
+    title, err := syscall.UTF16PtrFromString(dialogTitle)
     if err != nil { return "", err }
     if err := folderHRESULT(callFolderCOM(dialog, 17, uintptr(unsafe.Pointer(title))), "Set folder picker title"); err != nil {
         return "", err
     }
-    label, err := syscall.UTF16PtrFromString("Choose folder")
+    buttonText:="Choose folder"
+    if !folder {buttonText="Select program"}
+    label, err := syscall.UTF16PtrFromString(buttonText)
     if err != nil { return "", err }
     if err := folderHRESULT(callFolderCOM(dialog, 18, uintptr(unsafe.Pointer(label))), "Set folder picker button label"); err != nil {
         return "", err

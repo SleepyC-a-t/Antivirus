@@ -51,7 +51,7 @@ button{background:#203149;border:1px solid #39516b;color:#dce7f9;padding:10px 14
 <body>
 <div class="wrap">
  <header class="top"><div class="brand"><div class="mark">◆</div><div><h1>SentinelGuard <span style="font-size:10px;font-weight:600;color:var(--accent);vertical-align:top">v3.3</span></h1><small>On-demand threat investigation · Windows 10 / 11</small></div></div><div class="top-actions"><span class="tag">● Local-only · No uploads</span><button class="outline" id="windowsSecurity">Open Windows Security</button><button class="outline" id="exit">Exit application</button></div></header>
- <section class="hero"><span class="eyebrow">SENTINELGUARD 4.0 · DESKTOP SECURITY CENTER</span><h2>Inspect first. Decide what happens next.</h2><p>One security center for on-demand scanning and optional download protection. Your live shield starts <strong>OFF</strong>. Heuristic findings are evidence for review, not proof of infection. Keep your main antivirus enabled.</p></section>
+ <section class="hero"><span class="eyebrow">SENTINELGUARD 4.1 · DESKTOP SECURITY CENTER</span><h2>Inspect first. Decide what happens next.</h2><p>One security center for on-demand scanning and optional download protection. Your live shield starts <strong>OFF</strong>. Heuristic findings are evidence for review, not proof of infection. Keep your main antivirus enabled.</p></section>
  <div class="shell">
   <aside><div class="panel"><h3>Configure a scan</h3><p class="section-desc">Choose a scanning engine and the areas to inspect. Nothing is quarantined automatically by SentinelGuard.</p>
     <div class="control-label">Scanning engine</div>
@@ -76,6 +76,16 @@ button{background:#203149;border:1px solid #39516b;color:#dce7f9;padding:10px 14
         <div><small>High-confidence quarantined</small><b id="activeBlocked">0</b></div></div>
       <div class="active-options"><label><input type="checkbox" id="activeAutoBlock"> Allow auto-quarantine for high-confidence downloads (score ≥ 110 only)</label>
       <p class="active-sub">Review-level findings are never automatically quarantined. There is a delay after a download finishes; do not open untrusted files before your main antivirus scans them.</p></div>
+      <div class="active-options">
+      <b>Scan &amp; Run — optional pre-launch check</b>
+      <p class="active-sub">OFF by default. Only programs launched through this button are checked before execution. Normal Explorer double-clicks are <b>not intercepted</b>. Suspicious .exe files trigger a native Windows confirmation, defaulting to No.</p>
+      <label><input type="checkbox" id="activeSafeLaunch"> Enable Scan &amp; Run while live protection is ON</label>
+      <div class="active-btns"><button class="outline" id="activeBrowseExe">Choose .exe…</button>
+      <button class="outline" id="activeRunExe">Scan &amp; Run selected program</button></div>
+      <input id="activeExePath" type="text" placeholder="Choose a .exe above, or enter its full path" aria-label="Executable path" spellcheck="false" autocomplete="off">
+      <p id="activeLaunchMessage" class="active-sub" aria-live="polite">No program selected. No program is launched automatically.</p>
+      <p class="active-sub" id="activeLaunchCounters">Launch checks: 0 · Allowed: 0 · Denied: 0</p>
+      </div>
       <div class="active-options"><b>Folders monitored:</b><div id="activeWatchedFolders" class="active-watch">Not configured</div>
       <div class="active-btns"><button class="outline" id="activeAddFolder">Add folder…</button><button class="outline" id="activeRemoveFolder">Remove folder…</button></div></div>
       <div class="active-options"><b>Browser protection (optional companion extension)</b>
@@ -165,7 +175,7 @@ function renderStatus(){
 async function refresh(){
  try{
   let j=await api('/api/snapshot');state.connectionLosses=0;state.status=j.status;state.findings=j.findings||[];
-  if(j.product?.activeEdition){document.querySelector('#activeProtectionPanel').classList.remove('hide');document.title='SentinelGuard 4.0 · Security Center';if(!state.activeEdition){state.activeEdition=true;refreshActive();}}
+  if(j.product?.activeEdition){document.querySelector('#activeProtectionPanel').classList.remove('hide');document.title='SentinelGuard 4.1 · Security Center';if(!state.activeEdition){state.activeEdition=true;refreshActive();}}
   for(let id of [...state.selected])if(!state.findings.some(f=>f.id===id&&f.canQuarantine))state.selected.delete(id);
   renderStatus();if(state.activeTab==='findings')renderFindings();
  }catch(e){state.connectionLosses++;if(state.connectionLosses>=3)renderStatus()}
@@ -207,6 +217,10 @@ async function refreshActive(){
    $('activeState').className=j.enabled?'active-good':'active-bad';
    $('activeToggle').textContent=j.enabled?'Turn protection OFF':'Turn protection ON';
    $('activeAutoBlock').checked=!!j.autoQuarantine;
+   $('activeSafeLaunch').checked=!!j.safeLaunch;
+   $('activeSafeLaunch').disabled=!j.enabled;
+   $('activeRunExe').disabled=!j.enabled||!j.safeLaunch;
+   $('activeLaunchCounters').textContent='Launch checks: '+(j.launchChecks||0)+' · Allowed: '+(j.launchApproved||0)+' · Denied: '+(j.launchDenied||0);
    $('activeInspected').textContent=fmt(j.inspected||0);
    $('activeFlagged').textContent=fmt(j.flagged||0);
    $('activeBlocked').textContent=fmt(j.quarantined||0);
@@ -231,6 +245,29 @@ $('activeToggle').onclick=async()=>{
 $('activeAutoBlock').onchange=async()=>{
  try{await api('/api/active/autoblock',{Enabled:$('activeAutoBlock').checked});await refreshActive()}
  catch(e){toastError(e);await refreshActive()}
+};
+$('activeSafeLaunch').onchange=async()=>{
+ try{await api('/api/active/safe-launch-toggle',{Enabled:$('activeSafeLaunch').checked});await refreshActive()}
+ catch(e){toastError(e);await refreshActive()}
+};
+$('activeBrowseExe').onclick=async()=>{
+ try{
+   const choice=await api('/api/active/choose-executable',{});
+   if(choice.path&&!choice.cancelled){$('activeExePath').value=choice.path}
+ }catch(e){toastError(e)}
+};
+$('activeRunExe').onclick=async()=>{
+ const path=$('activeExePath').value.trim();
+ if(!path){$('activeLaunchMessage').textContent='Select a .exe program first.';return}
+ $('activeRunExe').disabled=true;
+ $('activeLaunchMessage').textContent='Checking file before launch; a native Windows warning may appear…';
+ try {
+   const r=await api('/api/active/safe-launch',{Path:path});
+   $('activeLaunchMessage').textContent=r.started?
+      'Windows launch requested. This does not guarantee the program is safe.':
+      'Program was not launched: '+(r.message||r.decision);
+   await refreshActive();
+ }catch(e){$('activeLaunchMessage').textContent=e.message||String(e);await refreshActive();}
 };
 $('activeAddFolder').onclick=async()=>{
  try{
@@ -269,7 +306,7 @@ document.querySelectorAll('[name=engine]').forEach(e=>e.onchange=updateEngine);
 $('scan').onclick=start;$('cancel').onclick=async()=>{try{await api('/api/stop',{})}catch(e){toastError(e)}};
 $('windowsSecurity').onclick=async()=>{try{await api('/api/security',{})}catch(e){toastError(e)}};
 $('exit').onclick=async()=>{if(!confirm('Exit SentinelGuard? Scanning, if active, will stop.'))return;try{await api('/api/exit',{});document.body.innerHTML='<main style="max-width:600px;margin:100px auto;padding:30px;color:#cbd5e1;font:18px system-ui"><h2>SentinelGuard closed.</h2><p>You can close this browser tab. Restart SentinelGuard.exe to run another scan.</p></main>'}catch(e){toastError(e)}};
-$('export').onclick=()=>{const a=document.createElement('a');a.href='/api/report?token='+encodeURIComponent(TOKEN);a.download='SentinelGuard_v4.0_Report.json';document.body.appendChild(a);a.click();a.remove()};
+$('export').onclick=()=>{const a=document.createElement('a');a.href='/api/report?token='+encodeURIComponent(TOKEN);a.download='SentinelGuard_v4.1_Report.json';document.body.appendChild(a);a.click();a.remove()};
 $('refreshVault').onclick=refreshVault;document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>tabs(b.dataset.tab));
 async function poll(){await refresh();setTimeout(poll,1000)}
 poll();refreshVault();
