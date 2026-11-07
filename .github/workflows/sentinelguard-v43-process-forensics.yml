@@ -37,6 +37,19 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Build both historical and patched Windows executables without running either
+        run: |
+          New-Item -ItemType Directory -Force -Path process-forensics | Out-Null
+          foreach ($tag in @('old','patched')) {
+            Push-Location "$tag/SentinelLite_Source/SentinelLite/src"
+            try {
+              $exe=Join-Path $env:RUNNER_TEMP "SentinelGuard-$tag-FORENSICS-DO-NOT-RUN.exe"
+              go build -trimpath -ldflags '-s -w -H windowsgui' -o $exe .
+              if ($LASTEXITCODE -ne 0) {throw "$tag Windows build failed"}
+              $hash=(Get-FileHash -Algorithm SHA256 $exe).Hash.ToLowerInvariant()
+              "$tag build_sha256=$hash" | Add-Content -Encoding ascii (Join-Path $env:GITHUB_WORKSPACE 'process-forensics/build-hashes.txt')
+            } finally {Pop-Location}
+          }
       - name: Confirm trusted Windows OS and instrumentation only
         run: |
           Write-Host "Old=$((git -C old rev-parse HEAD))"
