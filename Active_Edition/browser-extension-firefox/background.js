@@ -74,7 +74,7 @@ async function pairedAppIsOn(pair) {
       cache:"no-store",credentials:"omit",signal:ctl.signal,referrerPolicy:"no-referrer"});
     if(!response.ok)return false;
     const payload=await response.json();
-    return payload.enabled===true && payload.edition==="SentinelGuard 4.0";
+    return payload.enabled===true && payload.edition==="SentinelGuard 4.1";
   }finally{clearTimeout(timer);}
 }
 let running=null;
