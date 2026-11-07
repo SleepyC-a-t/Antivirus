@@ -1,7 +1,6 @@
 package main
 
 import (
-    "context"
     "go/ast"
     "go/parser"
     "go/token"
