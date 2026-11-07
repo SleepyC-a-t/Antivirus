@@ -95,6 +95,16 @@ jobs:
           node --check ../browser-extension-firefox/background.js
           node --check ../browser-extension-firefox/popup.js
           node -e "const fs=require('fs');const a=JSON.parse(fs.readFileSync('manifest.json','utf8'));const b=JSON.parse(fs.readFileSync('../browser-extension-firefox/manifest.json','utf8'));if(!a.background.service_worker||a.background.scripts||!b.background.scripts||b.background.service_worker)process.exit(1)"
+      - name: Check Authenticode status (unsigned unless separately signed)
+        run: |
+          $exe=Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.1.exe'
+          $signature=Get-AuthenticodeSignature $exe
+          Write-Host "Executable signature status: $($signature.Status)"
+          if ($signature.Status -eq 'Valid') {
+            Write-Host "Authenticode subject: $($signature.SignerCertificate.Subject)"
+          }else{
+            Write-Host 'NOTE: Development build is unsigned. Hash manifests do not authenticate the publisher.'
+          }
       - name: Assemble v4 release folder
         shell: pwsh
         working-directory: .
@@ -105,6 +115,22 @@ jobs:
           Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'Active_Edition/browser-extension') (Join-Path $package 'browser-extension') -Recurse
           Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'Active_Edition/browser-extension-firefox') (Join-Path $package 'browser-extension-firefox') -Recurse
           Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'Active_Edition/README.md') (Join-Path $package 'README.txt')
+          Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'Active_Edition/INDEPENDENT_TESTING.md') (Join-Path $package 'INDEPENDENT_TESTING.txt')
+          $all=Get-ChildItem $package -File -Recurse | Sort-Object FullName
+          $hashLines=@(foreach ($file in $all) {
+            $relative=$file.FullName.Substring($package.Length+1).Replace('\','/')
+            $digest=(Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$digest *$relative"
+          })
+          Set-Content -LiteralPath (Join-Path $package 'SHA256SUMS.txt') -Value $hashLines -Encoding utf8
+          Set-Content -LiteralPath (Join-Path $package 'BUILD-INFO.txt') -Value @(
+            'SentinelGuard 4.1 — experimental development build',
+            "Git commit: $env:GITHUB_SHA",
+            "GitHub run: https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID",
+            'Live protection, automatic quarantine and Scan & Run are OFF by default.',
+            'Executable is NOT authenticated by checksums alone. Verify Authenticode separately.',
+            'Browser extensions are optional; real-world blocking effectiveness is not established.'
+          ) -Encoding utf8
       - name: Publish verified v4 Windows build
         uses: actions/upload-artifact@v4
         with:
