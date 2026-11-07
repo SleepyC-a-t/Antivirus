@@ -81,8 +81,11 @@ func v42PEIndicators(imported map[string]bool,highEntropy,packed,overlay bool)(i
  remote:=imported["createremotethread"]||imported["ntcreatethreadex"]||imported["queueuserapc"]
  write:=imported["writeprocessmemory"]||imported["ntwritevirtualmemory"]
  if !alloc||!remote||!write{return 0,nil}
- addition:=48
- why:=[]string{"PE imports combine remote allocation, process-memory writing and remote thread/APC APIs (possible debugger software)"}
+ // Import triples are common in legitimate debugger/virtualization/browser tools.
+ // Independent benign CI survey found 31 matches / 8,499 parsed PEs.
+ // Uncorroborated imports MUST remain advisory (<40), not a standalone alert.
+ addition:=28
+ why:=[]string{"PE import triad is advisory until corroborated by entropy, overlay or other suspicious evidence (also used by legitimate debugging software)"}
  if highEntropy {
     addition+=12
     why=append(why,"High-entropy PE executable section alongside remote-memory APIs")
