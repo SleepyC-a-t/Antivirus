@@ -114,3 +114,8 @@ corpus is included in the production application.
 **Privacy:** launch events include local executable paths and reasons. The
 browser pairing secret is NOT included in exported reports. Redact exported
 paths before sharing. Keep Bitdefender or Defender enabled.
+
+**Event retention:** The in-memory dashboard and exported Live JSON retain the
+latest 300 general events and the latest 120 launch decisions. The report
+includes `eventsOmitted` and `launchEventsOmitted` counters for records
+that aged out. This is not a persistent, tamper-proof system audit log.

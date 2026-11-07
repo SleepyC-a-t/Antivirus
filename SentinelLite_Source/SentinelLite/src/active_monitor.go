@@ -37,6 +37,8 @@ type ActiveStatus struct {
     LaunchApproved int64 `json:"launchApproved"`
     LaunchDenied int64 `json:"launchDenied"`
     LaunchEvents []ActiveEvent `json:"launchEvents"`
+    EventsOmitted int64 `json:"eventsOmitted"`
+    LaunchEventsOmitted int64 `json:"launchEventsOmitted"`
     WatchedFolders []string `json:"watchedFolders"`
     Inspected int64 `json:"inspected"`
     Flagged int64 `json:"flagged"`
@@ -55,6 +57,7 @@ type ActiveMonitor struct {
     pairingPersistent bool
     launchChecks, launchApproved, launchDenied int64
     launchEvents []ActiveEvent
+    eventsOmitted, launchEventsOmitted int64
     watched []string
     seen map[string]activeStamp
     pending map[string]activePending
@@ -78,13 +81,14 @@ func (a *ActiveMonitor) snapshot() ActiveStatus {
     out:=ActiveStatus{Edition:"SentinelGuard 4.1",Enabled:a.enabled,AutoQuarantine:a.autoQuarantine,SafeLaunch:a.safeLaunch,PairingPersistent:a.pairingPersistent,
         LaunchChecks:a.launchChecks,LaunchApproved:a.launchApproved,LaunchDenied:a.launchDenied,
         LaunchEvents:append([]ActiveEvent{},a.launchEvents...),
+        EventsOmitted:a.eventsOmitted,LaunchEventsOmitted:a.launchEventsOmitted,
         WatchedFolders:append([]string{},a.watched...),Inspected:a.inspected,Flagged:a.flagged,
         Quarantined:a.quarantined,LastError:a.lastError,Events:append([]ActiveEvent{},a.events...),
         Notice:"Windows filesystem events trigger file reviews, with a periodic reconciliation fallback. Inspection occurs after writes settle, not before external execution. Only high-confidence findings (score >=110) are auto-quarantined when the user separately opts in. Website protection requires the optional paired browser extension; Bitdefender/Defender remain primary protection."}
     return out
 }
 func (a *ActiveMonitor) appendEventLocked(e ActiveEvent) {
-    if len(a.events)>=300 {copy(a.events,a.events[1:]);a.events[len(a.events)-1]=e
+    if len(a.events)>=300 {copy(a.events,a.events[1:]);a.events[len(a.events)-1]=e;a.eventsOmitted++
     } else {a.events=append(a.events,e)}
 }
 func (a *ActiveMonitor) setSafeLaunch(value bool) error {
@@ -102,6 +106,7 @@ func (a *ActiveMonitor) logLaunchEvent(e ActiveEvent) {
     if len(a.launchEvents)>=120 {
         copy(a.launchEvents,a.launchEvents[1:])
         a.launchEvents[len(a.launchEvents)-1]=e
+        a.launchEventsOmitted++
     }else{a.launchEvents=append(a.launchEvents,e)}
     a.appendEventLocked(e)
 }
@@ -317,7 +322,7 @@ func (a *ActiveMonitor) pollProtected() {
     a.pollOnce()
 }
 func (a *ActiveMonitor) clearHistory(){
-    a.mu.Lock();a.events=nil;a.launchEvents=nil;a.launchChecks=0;a.launchApproved=0;a.launchDenied=0;a.inspected=0;a.flagged=0;a.quarantined=0;a.mu.Unlock()
+    a.mu.Lock();a.events=nil;a.launchEvents=nil;a.eventsOmitted=0;a.launchEventsOmitted=0;a.launchChecks=0;a.launchApproved=0;a.launchDenied=0;a.inspected=0;a.flagged=0;a.quarantined=0;a.mu.Unlock()
 }
 func (a *ActiveMonitor) summaryText() string {
     s:=a.snapshot()
