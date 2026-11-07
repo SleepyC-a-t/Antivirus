@@ -49,6 +49,7 @@ type Status struct {
 	Files    int64     `json:"files"`
 	Skipped  int64     `json:"skipped"`
     Resources ScanResourceUsage `json:"resources"`
+    ChildProcessesStarted int64 `json:"childProcessesStarted"` // direct children created by SentinelGuard, not OS-wide process count
 	SkipLogOmitted int64 `json:"skipLogOmitted"`
 	Findings int       `json:"findings"`
 	Omitted int64 `json:"omitted"`
@@ -161,6 +162,11 @@ func (a *App) stop() {
 	if c != nil {
 		c()
 	}
+}
+func (a *App) recordChildStarted() {
+    a.mu.Lock()
+    a.status.ChildProcessesStarted++
+    a.mu.Unlock()
 }
 func (a *App) incrFiles()          { atomic.AddInt64(&a.files, 1) }
 // Record skipped paths and reasons for the JSON report. The count is always
