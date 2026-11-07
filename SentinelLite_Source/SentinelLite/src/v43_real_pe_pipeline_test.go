@@ -2,6 +2,7 @@ package main
 
 import (
  "context"
+ "bytes"
  "encoding/binary"
  "os"
  "path/filepath"
@@ -41,13 +42,16 @@ func TestSecurityRealScanPipelineReachesTripleImportSignatureHook(t *testing.T){
  dir:=t.TempDir()
  pe:=filepath.Join(dir,"inert-triple-import.exe")
  if err:=os.WriteFile(pe,makeInertTripleImportPE(),0600);err!=nil{t.Fatal(err)}
+ corroborated:=filepath.Join(dir,"inert-triple-with-overlay.exe")
+ overlay:=append(makeInertTripleImportPE(),bytes.Repeat([]byte{0},512*1024)...)
+ if err:=os.WriteFile(corroborated,overlay,0600);err!=nil{t.Fatal(err)}
  control:=filepath.Join(dir,"benign-document.txt")
  if err:=os.WriteFile(control,[]byte("ordinary document"),0600);err!=nil{t.Fatal(err)}
  saved:=verifyPESignature
  calls:=0
  verifyPESignature=func(path string)(string,string){
     calls++
-    if path!=pe {t.Errorf("unexpected signature path %q",path)}
+    if path!=pe&&path!=corroborated {t.Errorf("unexpected signature path %q",path)}
     return "Not verified (synthetic fixture)", "Unverified"
  }
  defer func(){verifyPESignature=saved}()
@@ -57,21 +61,22 @@ func TestSecurityRealScanPipelineReachesTripleImportSignatureHook(t *testing.T){
  app.finish(err)
  if err!=nil{t.Fatal(err)}
  st,findings:=app.snapshot()
- if st.Files!=2{t.Fatalf("scan worker skipped or executed a sample: %+v",st)}
- if calls!=1{t.Fatalf("real file walker and PE analyzer did not call trust verifier exactly once: %d",calls)}
+ if st.Files!=3{t.Fatalf("scan worker skipped or executed a sample: %+v",st)}
+ if calls!=2{t.Fatalf("real file walker and PE analyzer must call native trust for both import sets: %d",calls)}
  if len(findings)==0{t.Fatal("expected static PE indicators not reported")}
  found:=false
  for _,f:=range findings {
-   if strings.EqualFold(f.Path,pe)&&f.Score>=40{found=true}
+   if strings.EqualFold(f.Path,pe)&&f.Score>=40{t.Errorf("uncorroborated import triad must not alert: %+v",f)}
+   if strings.EqualFold(f.Path,corroborated)&&f.Score>=40{found=true}
  }
- if !found{t.Fatalf("triple-import PE not identified by actual scan: %+v",findings)}
+ if !found{t.Fatalf("corroborated PE overlay not identified by actual scan: %+v",findings)}
  // Zero launches are performed in the injectable hook; actual child-process
  // absence must be verified independently by Windows ETW, not asserted here.
 }
 
 func TestSecurityPEImportCorroborationPolicy(t *testing.T) {
  cases:=[]struct{name string;names map[string]bool; entropy,packed,overlay bool;positive bool}{
-  {"triple import",map[string]bool{"virtualallocex":true,"writeprocessmemory":true,"createremotethread":true},false,false,false,true},
+  {"triple import",map[string]bool{"virtualallocex":true,"writeprocessmemory":true,"createremotethread":true},false,false,false,false},
   {"triple plus packed",map[string]bool{"ntallocatevirtualmemory":true,"ntwritevirtualmemory":true,"ntcreatethreadex":true},true,true,true,true},
   {"debugger reads memory",map[string]bool{"virtualallocex":true,"readprocessmemory":true,"createremotethread":true},true,false,false,false},
   {"ordinary alloc",map[string]bool{"virtualalloc":true,"virtualprotect":true},true,true,true,false},
