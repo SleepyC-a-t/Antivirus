@@ -3,15 +3,11 @@
 package main
 
 import (
-    "bytes"
-    "context"
     "errors"
     "fmt"
     "os"
-    "os/exec"
     "strings"
     "syscall"
-    "time"
     "unsafe"
 
     "golang.org/x/sys/windows"
@@ -52,20 +48,13 @@ func v42VerifySignature(path string)(string,string){
  if uint32(status)!=0 {
      return fmt.Sprintf("Not verified (WinVerifyTrust status 0x%08X)",uint32(status)),"Unverified"
  }
- // Publisher is informational, not a trust decision. Windows' locally cached
- // signature-chain validity is determined by WinVerifyTrust above.
- ctx,cancel:=context.WithTimeout(context.Background(),3*time.Second)
- defer cancel()
- escaped:=strings.ReplaceAll(path,"'","''")
- script:="$s=Get-AuthenticodeSignature -LiteralPath '"+escaped+"'; if($s.SignerCertificate){$s.SignerCertificate.Subject}"
- cmd:=exec.CommandContext(ctx,"powershell.exe","-NoProfile","-NonInteractive","-Command",script)
- raw,err:=cmd.Output()
- publisher:="Not available"
- if err==nil && len(raw)<4096 {
-   publisher=strings.TrimSpace(string(bytes.TrimSpace(raw)))
-   if publisher==""{publisher="Not available"}
- }
- return "Trusted (WinVerifyTrust, offline cache)",publisher
+ // Security hotfix: publisher lookup MUST NOT start PowerShell or any
+ // child process while scanning a PE. The prior implementation invoked
+ // powershell.exe for some signed executables, resulting in multiple visible
+ // console windows during full scans. Native WinVerifyTrust above is entirely
+ // in-process. Until a bounded native certificate-subject parser is available,
+ // report publisher as unavailable rather than execute an interpreter.
+ return "Trusted (WinVerifyTrust, offline cache)", "Publisher unavailable (native-only verification)"
 }
 func v42ZoneIdentifier(path string)(string,bool,error){
  // Use the Windows Alternate Data Stream, *not* a sidecar file.
