@@ -31,6 +31,11 @@ type ActiveStatus struct {
     Edition string `json:"edition"`
     Enabled bool `json:"enabled"`
     AutoQuarantine bool `json:"autoQuarantine"`
+    SafeLaunch bool `json:"safeLaunch"`
+    LaunchChecks int64 `json:"launchChecks"`
+    LaunchApproved int64 `json:"launchApproved"`
+    LaunchDenied int64 `json:"launchDenied"`
+    LaunchEvents []ActiveEvent `json:"launchEvents"`
     WatchedFolders []string `json:"watchedFolders"`
     Inspected int64 `json:"inspected"`
     Flagged int64 `json:"flagged"`
@@ -45,6 +50,9 @@ type ActiveMonitor struct {
     wake chan struct{}
     enabled bool
     autoQuarantine bool
+    safeLaunch bool
+    launchChecks, launchApproved, launchDenied int64
+    launchEvents []ActiveEvent
     watched []string
     seen map[string]activeStamp
     pending map[string]activePending
@@ -65,15 +73,35 @@ func newActiveMonitor(vault *Vault) *ActiveMonitor {
 }
 func (a *ActiveMonitor) snapshot() ActiveStatus {
     a.mu.RLock();defer a.mu.RUnlock()
-    out:=ActiveStatus{Edition:"SentinelGuard 4.1",Enabled:a.enabled,AutoQuarantine:a.autoQuarantine,
+    out:=ActiveStatus{Edition:"SentinelGuard 4.1",Enabled:a.enabled,AutoQuarantine:a.autoQuarantine,SafeLaunch:a.safeLaunch,
+        LaunchChecks:a.launchChecks,LaunchApproved:a.launchApproved,LaunchDenied:a.launchDenied,
+        LaunchEvents:append([]ActiveEvent{},a.launchEvents...),
         WatchedFolders:append([]string{},a.watched...),Inspected:a.inspected,Flagged:a.flagged,
         Quarantined:a.quarantined,LastError:a.lastError,Events:append([]ActiveEvent{},a.events...),
         Notice:"Windows filesystem events trigger file reviews, with a periodic reconciliation fallback. Inspection occurs after writes settle, not before external execution. Only high-confidence findings (score >=110) are auto-quarantined when the user separately opts in. Website protection requires the optional paired browser extension; Bitdefender/Defender remain primary protection."}
     return out
 }
 func (a *ActiveMonitor) appendEventLocked(e ActiveEvent) {
-    if len(a.events)>=80 {copy(a.events,a.events[1:]);a.events[len(a.events)-1]=e
+    if len(a.events)>=300 {copy(a.events,a.events[1:]);a.events[len(a.events)-1]=e
     } else {a.events=append(a.events,e)}
+}
+func (a *ActiveMonitor) setSafeLaunch(value bool) error {
+    a.mu.Lock()
+    defer a.mu.Unlock()
+    if value && !a.enabled {return errors.New("enable live protection before enabling Scan & Run")}
+    a.safeLaunch=value
+    a.appendEventLocked(ActiveEvent{At:time.Now(),Action:"safe-launch-toggle",
+        Reason:fmt.Sprintf("Opt-in pre-launch Scan & Run: %t",value)})
+    return nil
+}
+func (a *ActiveMonitor) logLaunchEvent(e ActiveEvent) {
+    a.mu.Lock()
+    defer a.mu.Unlock()
+    if len(a.launchEvents)>=120 {
+        copy(a.launchEvents,a.launchEvents[1:])
+        a.launchEvents[len(a.launchEvents)-1]=e
+    }else{a.launchEvents=append(a.launchEvents,e)}
+    a.appendEventLocked(e)
 }
 func (a *ActiveMonitor) setAutoQuarantine(value bool) {
     a.mu.Lock();a.autoQuarantine=value;a.mu.Unlock()
@@ -137,6 +165,7 @@ func (a *ActiveMonitor) setEnabled(enabled bool) error {
         if truncated {a.lastError="Watch enumeration reached the 30,000-file safety limit; some subfolders are not watched."}else{a.lastError=""}
     }
     a.enabled=enabled
+    if !enabled {a.safeLaunch=false}
     a.appendEventLocked(ActiveEvent{At:time.Now(),Action:map[bool]string{true:"enabled",false:"disabled"}[enabled],Reason:"User toggled live protection"})
     a.mu.Unlock()
     a.wakeWatcher()
@@ -286,7 +315,7 @@ func (a *ActiveMonitor) pollProtected() {
     a.pollOnce()
 }
 func (a *ActiveMonitor) clearHistory(){
-    a.mu.Lock();a.events=nil;a.inspected=0;a.flagged=0;a.quarantined=0;a.mu.Unlock()
+    a.mu.Lock();a.events=nil;a.launchEvents=nil;a.launchChecks=0;a.launchApproved=0;a.launchDenied=0;a.inspected=0;a.flagged=0;a.quarantined=0;a.mu.Unlock()
 }
 func (a *ActiveMonitor) summaryText() string {
     s:=a.snapshot()
