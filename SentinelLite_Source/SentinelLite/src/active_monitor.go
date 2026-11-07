@@ -216,12 +216,30 @@ func (a *ActiveMonitor) pollOnce() {
     roots:=append([]string{},a.watched...)
     a.mu.RUnlock()
     if !enabled {return}
+    // A watched directory can disappear, become inaccessible, or be
+    // replaced by a junction while SentinelGuard is running. Surface that
+    // limitation rather than silently reporting that everything was scanned.
+    unavailable:=""
+    for _,root:=range roots{
+        info,err:=os.Lstat(root)
+        if err!=nil||!info.IsDir()||isReparse(root){
+            unavailable="Monitor cannot inspect configured folder: "+root
+            if err!=nil{unavailable+=" ("+err.Error()+")"}
+            break
+        }
+    }
     current,truncated:=collectActiveFiles(roots)
     candidates:=make([]string,0,20)
     now:=time.Now()
     a.mu.Lock()
     if !a.enabled {a.mu.Unlock();return}
-    if truncated {a.lastError="Watch enumeration exceeded the 30,000-file limit. Reduce monitored folder size."}
+    if unavailable!="" {
+        a.lastError=unavailable
+    }else if truncated {
+        a.lastError="Watch enumeration exceeded the 30,000-file limit. Reduce monitored folder size."
+    }else if strings.HasPrefix(a.lastError,"Monitor cannot inspect configured folder:"){
+        a.lastError=""
+    }
     for p,stamp:=range current {
         if prior,ok:=a.seen[p];ok&&prior==stamp {delete(a.pending,p);continue}
         pending,exists:=a.pending[p]
