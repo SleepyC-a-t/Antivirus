@@ -1,0 +1,138 @@
+name: SentinelGuard 4.2 — independent techniques, official EICAR and benign comparisons
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/sentinelguard-v42-evaluation.yml'
+      - 'SentinelLite_Source/**'
+      - 'docs/SentinelGuard-4.2-COVERAGE.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+
+jobs:
+  harmless-public-techniques:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: SentinelLite_Source/SentinelLite/src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: SentinelLite_Source/SentinelLite/src/go.mod
+          cache: false
+      - name: Prepare test evidence and download only harmless/public text definitions
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/public-evidence/definitions"
+          BASE="$GITHUB_WORKSPACE/public-evidence"
+          for record in "eicar_com.zip" "eicarcom2.zip"; do
+            URL="https://secure.eicar.org/$record"
+            if curl --fail --location --silent --show-error --connect-timeout 8 --max-time 20 --max-filesize 4096 "$URL" -o "$RUNNER_TEMP/$record"; then
+              if [ "$record" = "eicar_com.zip" ]; then
+                EXPECT="2546dcffc5ad854d4ddc64fbf056871cd5a00f2471cb7a5bfd4ac23b6e9eedad"
+                ENVNAME="SENTINELGUARD_OFFICIAL_EICAR_ZIP"
+              else
+                EXPECT="e1105070ba828007508566e28a2b8d4c65d192e9eaf3b7868382b7cae747b397"
+                ENVNAME="SENTINELGUARD_OFFICIAL_EICAR_ZIP2"
+              fi
+              ACTUAL=$(sha256sum "$RUNNER_TEMP/$record" | cut -d ' ' -f 1)
+              if [ "$ACTUAL" = "$EXPECT" ]; then
+                echo "$ENVNAME=$RUNNER_TEMP/$record" >> "$GITHUB_ENV"
+                echo "OFFICIAL_EICAR_VERIFIED file=$record sha256=$ACTUAL" | tee -a "$BASE/download-manifest.txt"
+              else
+                echo "OFFICIAL_EICAR_NOT_VERIFIED file=$record sha256=$ACTUAL; not counted" | tee -a "$BASE/download-manifest.txt"
+                rm -f "$RUNNER_TEMP/$record"
+              fi
+            else
+              echo "OFFICIAL_EICAR_NOT_AVAILABLE file=$record; not counted" | tee -a "$BASE/download-manifest.txt"
+            fi
+          done
+          for entry in \
+            "atomic-powershell.yaml.txt|https://raw.githubusercontent.com/redcanaryco/atomic-red-team/master/atomics/T1059.001/T1059.001.yaml" \
+            "atomic-process-injection.yaml.txt|https://raw.githubusercontent.com/redcanaryco/atomic-red-team/master/atomics/T1055/T1055.yaml" \
+            "lolbas-certutil.yaml.txt|https://raw.githubusercontent.com/LOLBAS-Project/LOLBAS/master/yml/OSBinaries/Certutil.yml"; do
+            NAME=$(echo "$entry" | cut -d '|' -f1)
+            URL=$(echo "$entry" | cut -d '|' -f2)
+            if curl --fail --location --silent --show-error --connect-timeout 8 --max-time 20 --max-filesize 1048576 "$URL" -o "$BASE/definitions/$NAME"; then
+              echo "TECHNIQUE_SOURCE name=$NAME sha256=$(sha256sum "$BASE/definitions/$NAME" | cut -d ' ' -f1) url=$URL" | tee -a "$BASE/download-manifest.txt"
+            else
+              rm -f "$BASE/definitions/$NAME"
+              echo "TECHNIQUE_NOT_AVAILABLE name=$NAME url=$URL" | tee -a "$BASE/download-manifest.txt"
+            fi
+          done
+          # Microsoft's published harmless AMSI test string. It is never executed.
+          printf '%s\n' '$testString = "AMSI Test Sample: " + "7e72c3ce-861b-4339-8740-0ac1484c1386"' 'Invoke-Expression $testString' > "$BASE/definitions/microsoft-amsi-demonstration.ps1"
+          echo "TECHNIQUE_SOURCE name=microsoft-amsi-demonstration.ps1 url=https://learn.microsoft.com/en-us/defender-endpoint/mde-demonstration-amsi" | tee -a "$BASE/download-manifest.txt"
+          echo "SENTINELGUARD_TECHNIQUE_DEFINITIONS=$BASE/definitions" >> "$GITHUB_ENV"
+          echo "Only harmless published test strings and static technique definitions were acquired. No payload was executed."
+
+      - name: Read-only static evaluation, no sample execution
+        run: |
+          set -o pipefail
+          go test -count=1 -v -run '^Test(V42OfficialVendorEICARZipsHashChecked|V42IndependentTechniqueDefinitionsStaticOnly|V42OfficialEICARMarkerRecursionAndBenignControls)$' ./... | tee "$GITHUB_WORKSPACE/public-evidence/public-technique-results.log"
+
+      - name: Remove temporary test samples, keep only provenance and logs
+        if: always()
+        run: |
+          rm -rf "$GITHUB_WORKSPACE/public-evidence/definitions"
+          rm -f "$RUNNER_TEMP/eicar_com.zip" "$RUNNER_TEMP/eicarcom2.zip"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: SentinelGuard-4.2-Public-Technique-Evidence
+          path: public-evidence/
+          if-no-files-found: warn
+          retention-days: 30
+
+  windows-benign-before-after:
+    runs-on: windows-latest
+    timeout-minutes: 32
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Candidate source
+        uses: actions/checkout@v4
+        with:
+          path: candidate
+      - name: Frozen 4.1 baseline source
+        uses: actions/checkout@v4
+        with:
+          path: baseline
+          ref: sentinelguard-v4.1-protection-hardening
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: candidate/SentinelLite_Source/SentinelLite/src/go.mod
+          cache: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Read-only baseline and candidate scans on same Windows runner
+        run: |
+          $root = $env:GITHUB_WORKSPACE
+          $env:SENTINELGUARD_PYTHON_ROOT = python -c "import sys; print(sys.prefix)"
+          $env:SENTINELGUARD_NPM_ROOT = npm root -g
+          $survey = Join-Path $root 'candidate/SentinelLite_Source/SentinelLite/src/v42_windows_benign_corpus_test.go'
+          $old = Join-Path $root 'baseline/SentinelLite_Source/SentinelLite/src/v42_windows_benign_corpus_test.go'
+          Copy-Item $survey $old
+          New-Item -ItemType Directory -Force -Path (Join-Path $root 'candidate/evaluation-evidence') | Out-Null
+          Push-Location (Join-Path $root 'baseline/SentinelLite_Source/SentinelLite/src')
+          try {
+            go test -count=1 -v -run '^TestV42WindowsRealBenignCorpusReadOnly$' . *>&1 |
+              Tee-Object -FilePath (Join-Path $root 'candidate/evaluation-evidence/benign-4.1-baseline.log')
+            if ($LASTEXITCODE -ne 0) { throw '4.1 baseline survey failed' }
+          } finally { Pop-Location }
+          Push-Location (Join-Path $root 'candidate/SentinelLite_Source/SentinelLite/src')
+          try {
+            go test -count=1 -v -run '^Test(V42WindowsRealBenignCorpusReadOnly|V42BenignFrozenWindowsHoldout)$' . *>&1 |
+              Tee-Object -FilePath (Join-Path $root 'candidate/evaluation-evidence/benign-4.2-candidate.log')
+            if ($LASTEXITCODE -ne 0) { throw '4.2 candidate survey failed' }
+          } finally { Pop-Location }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: SentinelGuard-4.2-Benign-Survey-Before-After
+          path: candidate/evaluation-evidence/
+          retention-days: 30
+          if-no-files-found: warn
