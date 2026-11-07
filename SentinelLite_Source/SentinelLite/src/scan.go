@@ -455,6 +455,8 @@ func inspectFileDetailed(p string, info os.FileInfo, onReadError func(string)) *
 		if stage9InspectableExtension(ext) || stage10InspectableExtension(ext) || stage11InspectableExtension(ext) || stage12InspectableExtension(ext) {
 			maxRead = 512 * 1024
 		}
+        // Bounded PDF action token review (object streams still not parsed).
+        if ext==".pdf"{maxRead=512*1024}
         // Keep the Stage 12 advisory checks cheap on large photo/text libraries.
         // No benefit comes from decoding 512 KiB of every ordinary JPEG.
         switch ext {
@@ -506,8 +508,10 @@ func inspectFileDetailed(p string, info os.FileInfo, onReadError func(string)) *
 				}
 				if ext == ".lnk" {
 					inspectValidatedShortcut(buf, &score, &reasons)
+                    inspectV42LNK(buf,&score,&reasons)
 				}
-				if isDocumentOrImage(ext) && isPEHeader(buf) {
+				if ext==".pdf"{inspectV42PDF(buf,&score,&reasons)}
+                if isDocumentOrImage(ext) && isPEHeader(buf) {
 					add(80, "Valid PE executable header disguised as a document or image")
 				}
 				inspectPEFileMetadata(buf, ext, &score, &reasons)
@@ -516,6 +520,12 @@ func inspectFileDetailed(p string, info os.FileInfo, onReadError func(string)) *
 				inspectStage11Content(name, ext, buf, &score, &reasons)
                 inspectStage12Content(name, ext, buf, &score, &reasons)
                 _ = fh.Close()
+                if ext==".exe"||ext==".dll"||ext==".sys"||ext==".scr"||ext==".cpl"{
+                    inspectV42PE(p,info,&score,&reasons)
+                }
+                if (ext==".docm"||ext==".xlsm"||ext==".pptm") && info.Size()<=128*1024*1024{
+                    inspectV42MacroPackage(p,ext,&score,&reasons)
+                }
             } else if onReadError!=nil {
                 onReadError("file content could not be opened: "+err.Error())
             }
