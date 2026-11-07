@@ -23,6 +23,7 @@ func TestSecurityProcessCreationFunctionAllowlistAndReachability(t *testing.T) {
  funcs:=map[string]*ast.FuncDecl{}
  files:=map[string]string{}
  nativeProcessProcs:=map[string]string{}
+ nativeProcVars:=map[string]string{}
  fset:=token.NewFileSet()
  entries,err:=os.ReadDir(".");if err!=nil{t.Fatal(err)}
  for _,e:=range entries {
@@ -30,6 +31,22 @@ func TestSecurityProcessCreationFunctionAllowlistAndReachability(t *testing.T) {
   f,err:=parser.ParseFile(fset,e.Name(),nil,0)
   if err!=nil{t.Fatalf("parse %s: %v",e.Name(),err)}
   for _,decl:=range f.Decls {
+   if gen,ok:=decl.(*ast.GenDecl);ok {
+    for _,spec:=range gen.Specs {
+     v,ok:=spec.(*ast.ValueSpec);if !ok{continue}
+     for i,expr:=range v.Values {
+      call,ok:=expr.(*ast.CallExpr);if !ok||len(call.Args)!=1{continue}
+      sel,ok:=call.Fun.(*ast.SelectorExpr);if !ok||sel.Sel.Name!="NewProc"{continue}
+      arg,ok:=call.Args[0].(*ast.BasicLit);if !ok{continue}
+      api,_:=strconv.Unquote(arg.Value)
+      switch strings.ToLower(api){
+      case "createprocessw","createprocessa","winexec","shellexecutew",
+       "shellexecuteexw","shellexecutea","shellexecuteexa":
+       if i<len(v.Names){nativeProcVars[v.Names[i].Name]=api}
+      }
+     }
+    }
+   }
    if fn,ok:=decl.(*ast.FuncDecl);ok{
     funcs[fn.Name.Name]=fn
     files[fn.Name.Name]=e.Name()
@@ -74,8 +91,16 @@ func TestSecurityProcessCreationFunctionAllowlistAndReachability(t *testing.T) {
     if (isDirectProcess||cmdSpawn)&&!allowed[name]{
      t.Errorf("%s:%d: process-launch call %s.%s in non-allowlisted function %s",files[name],fset.Position(call.Pos()).Line,prefix,callee,name)
     }
-    if callee=="Call"&&prefix=="shellExecuteExW"&&!allowed[name]{
-     t.Errorf("%s:%d: ShellExecuteExW invoked outside function allowlist",files[name],fset.Position(call.Pos()).Line)
+    if callee=="Call"&&nativeProcVars[prefix]!=""&&!allowed[name]{
+     t.Errorf("%s:%d: native process API %s invoked outside function allowlist",files[name],fset.Position(call.Pos()).Line,nativeProcVars[prefix])
+    }
+    if callee=="NewProc"&&!allowed[name]&&len(call.Args)==1 {
+     if lit,ok:=call.Args[0].(*ast.BasicLit);ok{
+      api,_:=strconv.Unquote(lit.Value)
+      for _,danger:=range []string{"createprocessw","createprocessa","winexec","shellexecutew","shellexecuteexw","shellexecutea","shellexecuteexa"}{
+       if strings.EqualFold(api,danger){t.Errorf("%s:%d: dynamically loads process-creation API in unapproved function",files[name],fset.Position(call.Pos()).Line)}
+      }
+     }
     }
    }
    if funcs[callee]!=nil{calls[name][callee]=true}
