@@ -1,24 +1,24 @@
-# SentinelGuard 4.1 — optional browser protection
+# SentinelGuard 4.2 — browser companion
 
-The main SentinelGuard 4.1 GUI is a native Windows desktop application.
-These separate, optional extensions block exact known phishing URLs using
-browser request rules (not all suspicious websites, and not all downloads).
+The optional Manifest V3 companions block known exact phishing URL matches
+from a user-opted-in OpenPhish feed. A local, DPAPI-persisted secret is
+used only to verify a per-request HMAC challenge returned by the app.
+The extension never sends the secret in an HTTP header to localhost.
 
-- **Chrome/Edge**: load the `browser-extension` directory as an unpacked extension
-  from the browser extensions page with Developer Mode enabled.
-- **Firefox**: use `about:debugging#/runtime/this-firefox` → Load Temporary Add-on
-  and select `browser-extension-firefox/manifest.json`. Firefox temporary
-  unsigned extensions disappear after restart; permanent signing is needed.
+- **Firefox:** temporarily load the Firefox `manifest.json` using
+  `about:debugging#/runtime/this-firefox`. Permanent distribution requires
+  Mozilla AMO unlisted signing or the add-on marketplace; not yet completed.
+- **Chrome / Edge:** enable Developer Mode and Load Unpacked for local tests.
+  Future official distribution would require Chrome Web Store publication
+  or enterprise management policy; not yet completed.
+- Copy the pairing link in SentinelGuard, paste into the popup, choose Pair.
+  If you later revoke pairing in SentinelGuard, the extension is no longer
+  authorized and must be paired again. Normal restarts retain the DPAPI key.
 
-In SentinelGuard 4.1 choose **Copy read-only browser pairing link**. Paste the
-link in your extension popup and choose **Pair / update**. Toggle ON in
-SentinelGuard to activate local monitoring; the extension checks this status
-about every 30 seconds. Check the OpenPhish Community Feed box if you accept
-its personal/noncommercial terms and that the feed service will see your IP.
+The extension checks ON/OFF about every 30 seconds, cannot block every
+phishing site, and never performs HTTPS interception. It skips and reports
+feed URLs with urlFilter special characters `*`, `^`, `|`, to avoid
+accidental broad matching. The feed operator sees your IP address for
+the optional feed download; no browsing history is transmitted.
 
-No browsing history, passwords, cookies or downloaded files are uploaded.
-The extension connects only to the loopback app and the optional feed.
-It cannot change scan settings or access quarantine.
-
-Always leave your browser built-in phishing defense and installed real-time
-antivirus on.
+Keep your main antivirus and browser protections enabled.

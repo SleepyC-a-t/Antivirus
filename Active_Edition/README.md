@@ -1,139 +1,121 @@
-# SentinelGuard 4.1 — integrated Windows desktop security center
+# SentinelGuard 4.2 — experimental Windows desktop security center
 
-SentinelGuard 4.1 combines the existing manual scanner and its experimental
-opt-in Active monitor into **one Windows desktop application**. The dashboard
-runs inside a native Windows WebView2 window (Microsoft Edge WebView2 Runtime)
-rather than a tab in Firefox, Chrome or Edge.
+SentinelGuard 4.2 combines the manual heuristic scanner and **optional** download
+monitoring in one Microsoft Edge WebView2 desktop window. **Live protection,
+automatic quarantine and Scan & Run are all OFF on every launch.** It is a
+supplement, not a substitute for Microsoft Defender, Bitdefender or the browser's
+built-in phishing safeguards.
 
-## Starting SentinelGuard
+## Getting started
 
-1. Extract the full ZIP.
-2. Start `SentinelGuard-4.1.exe`. No separate server, browser or Python is
-   needed on your Windows PC. Windows 10/11 must have Microsoft Edge WebView2
-   Runtime installed.
-3. **Live protection is OFF by default on EVERY launch.** Manual scans,
-   scanned-file counts, findings, detailed skipped paths, quarantine vault and
-   process CPU/RAM telemetry still work independently.
-4. To try live monitoring, choose **Turn protection ON** in the app. If
-   `Downloads` is found it is watched automatically; choose **Add folder…**
-   to include other download destinations. Existing files are baselined when
-   monitoring is enabled. New or changed files are inspected after their writes
-   have settled, generally several seconds after a browser finishes saving.
-5. The independent **Allow auto-quarantine** checkbox also defaults OFF.
-   Opting in permits auto-quarantine only for findings scoring at least 110;
-   lower scores are always reviewed instead of moved automatically.
-6. The protection switch and entire monitor stop working when the application
-   exits or protection is turned OFF. This is not a Windows service and does not
-   automatically start after reboot.
+1. Extract the complete CI archive and open `SentinelGuard-4.2.exe`.
+   The Windows 10/11 machine needs the Microsoft Edge WebView2 Runtime.
+   This development build is **unsigned**.
+2. Manual scan works independently of active protection; you can browse for a
+   folder, start a custom or full scan, inspect findings and export a JSON report.
+3. Turn live protection ON only when you want newly completed files in
+   `Downloads` (or additional user-selected folders) examined. It uses
+   **FindFirstChangeNotificationW** and **FindNextChangeNotification**, plus
+   periodic directory reconciliation. It does **not** use a
+   ReadDirectoryChangesW event buffer or block execution before an app starts.
+4. Auto-quarantine remains a separate OFF-by-default choice. The existing
+   heuristic score threshold is unchanged at 110; do not mistake a high score
+   for proof of malware.
+5. Optional **Scan & Run** requires both live monitoring and the independent
+   launch-review toggle. Select a local EXE, review SHA-256, file size, Windows
+   Authenticode status, publisher when available, Mark-of-the-Web zone and
+   contextual findings, and decide whether to start it.
+6. The program uses the Windows **ShellExecuteExW "open"** launch pathway,
+   allowing applicable Windows shell / Attachment Execution Services / SmartScreen
+   dialogs to appear. It holds a read-only, no-write/no-delete sharing file
+   handle during final digest verification until ShellExecuteExW returns.
+   The file might nevertheless be changed through unusual filesystem mechanisms;
+   this is not an absolute race-free execution guarantee.
+7. If Windows asks for UAC elevation, **do not approve it for untrusted files**.
+   SentinelGuard does not request the "runas" verb. Windows' own requested
+   elevation is outside SentinelGuard's complete control; the application
+   cannot guarantee every launch is non-elevated. The helper does **not**
+   intercept programs launched through Explorer or elsewhere.
 
-## Browser website protection (optional)
+## Browser protection (optional)
 
-The browser companion uses a read-only local status pairing key plus
-`declarativeNetRequest` to block exact known phishing URLs from the optional
-OpenPhish Community Feed. Installing the extension is optional; it is not
-required for local file scanning.
+Two unsigned/unpublished extensions are included:
+- Chrome / Edge: load `browser-extension/` with Developer Mode / Load unpacked.
+- Firefox: choose `browser-extension-firefox/manifest.json` using
+  `about:debugging#/runtime/this-firefox` → Load Temporary Add-on.
 
-- **Firefox:** open `about:debugging#/runtime/this-firefox` > Load Temporary
-  Add-on, select `browser-extension-firefox/manifest.json`. The extension is
-  temporary until signed by Mozilla.
-- **Chrome/Edge:** open the extensions page, enable Developer mode, choose
-  Load unpacked, and select `browser-extension`.
-- From the SentinelGuard app click **Copy read-only browser pairing link**,
-  paste the link into your extension popup and choose Pair/update.
-- In the extension popup enable the **OpenPhish Community Feed** checkbox
-  if you agree to the feed provider's terms and IP-address disclosure.
-- Blocking state can take up to about a minute to reflect changes to the
-  application's protection switch. Pairing must be renewed after restarting
-  the application because the secure local port/key changes per launch.
+For permanent distribution, the developer must obtain Firefox
+**AMO unlisted-add-on signing** or publish through the **Chrome Web Store**;
+enterprise-managed extension installation is another deployment route.
+None of these registration/signing procedures have been completed.
 
-The feed's terms restrict community-feed use to personal/noncommercial
-use. No website contents, passwords, history or files you download are
-uploaded by SentinelGuard. The extension requests the feed from OpenPhish
-if and only if opted in, revealing your IP address to that provider.
+To pair, choose **Copy read-only browser pairing link** in SentinelGuard and
+paste it into the extension's popup. The extension stores the randomly
+generated shared secret locally; on each health check it sends only a fresh
+random nonce to `http://127.0.0.1:17654`. The application replies with an
+HMAC-SHA256; the extension verifies it before trusting the app's ON/OFF state.
+The secret is **never sent to an unverified local process** on startup.
+The user's encrypted pairing secret is persisted with Windows user-scoped DPAPI
+in `%LOCALAPPDATA%\SentinelLite\browser-pair.dpapi` and normally survives
+restart. **Revoke browser pairing** invalidates the old secret; re-pair
+extensions after revocation. A conflicting process holding port 17654 causes a
+visible startup failure, not silent fallback.
 
-## Limits and transparency
+Opt into the OpenPhish Community Feed in the extension only if you accept its
+personal/noncommercial-use terms and IP-address disclosure. The extension
+blocks **exact feed URLs** using browser-native declarativeNetRequest rules.
+Feed entries containing `*`, `^` or `|` are skipped and counted, since
+those are special urlFilter operators. It does **not** upload browser history,
+cookies, visited URLs or downloaded files to the feed or SentinelGuard.
+The feed's limitations and sync delay mean this is NOT broad web protection.
+Keep Firefox/Chrome/Edge built-in Safe Browsing / SmartScreen enabled.
 
-This is an **experimental supplement** to proper real-time antivirus,
-not an OS-level protection system. It does not install a kernel
-file-filter driver, intercept TLS or inspect memory/process events.
-Folder monitoring is not a pre-execution block: an untrusted file may be
-opened before the monitor inspects it. It only monitors configured directories,
-not every possible browser download folder, USB drive or cloud location.
+## 4.2 inspection improvements and constraints
 
-The application still uses the Stage 12 static heuristic engine, which
-found 55/65 synthetic suspicious cases with zero false positives among 30
-Stage 6 benign controls, but recognized only 4 of 16 Claude-labeled inert
-"suspicious" artifacts (0 of 8 benign controls incorrectly flagged).
-Many of the inert artifacts are intentionally harmless demonstrations.
+- ZIP and nested ZIP scanning recognizes the harmless standardized EICAR
+  marker in files of any extension, within strict archive budgets.
+- Limited static PE inspection combines imported API patterns with section
+  entropy and overlay; **entropy alone never makes a finding**. Trusted
+  Authenticode context reduces a corroborated PE score but does not guarantee
+  safety.
+- Limited binary .lnk, Office OOXML macro, and PDF launch/JavaScript parsing
+  includes benign lookalike regression tests.
+- Partial downloads (.crdownload/.part) are not scanned until completed/renamed.
+  More than 64 simultaneously settled files are queued for further inspection
+  instead of being silently marked processed.
+- A complete, honest file-type coverage matrix is in
+  `docs/SentinelGuard-4.2-COVERAGE.md` in the repository.
+- No real-malware dynamic sandbox, memory scanning, OS kernel interception,
+  reliable system-wide execution interception, encrypted ZIP/RAR/7z
+  unpacking, or unsigned rule-pack update service is implemented.
 
-Windows Defender / Bitdefender and your browser's standard protection should
-stay enabled. The executable is unsigned and may be flagged as an unknown
-publisher. Do not bypass an antivirus block just to run experimental code.
+## Reports and privacy
 
-**Privacy:** Exported JSON reports and local log files can contain Windows
-usernames, filenames, directory paths, timestamps and finding reasons.
-Redact these before sharing publicly.
+Full JSON reports can include Windows user names, absolute paths, private
+file names, file modified timestamps, SHA-256, and detection reasons.
+The **Redact paths and filenames in exported JSON** checkbox creates a
+separate share-oriented JSON with salted path/name pseudonyms. It leaves
+timestamps, hashes, relevant nonpath reasons and some metadata intact.
+**Review redacted reports before public sharing**: masking is best effort.
+Active launch audits include timestamp, decision, file path and digest; the
+dedicated log is bounded and discloses omitted record counts.
 
-**Development:** Python is used only by CI to regenerate Claude's inert
-test fixtures in a temporary directory. No Python interpreter or test
-corpus is included in the production application.
+## Testing boundaries
 
-## SentinelGuard 4.1 security options and privacy
+- **CI-tested**: Go unit/regression and race suites, Windows backend launch
+  without a GUI, native Windows API test stubs, harmless EICAR and simulated
+  controls, and independent static technique samples.
+- **Not yet field-tested in 4.2**: interactive WebView2 launch confirmation
+  with a real downloaded executable, SmartScreen/MotW prompt sequencing,
+  Firefox and Chrome blocking in real browsers, and long-running monitors
+  under an end user's workload.
+- The former 55/65 Stage 6 and 4/16 Claude-label figures are **development
+  regression results**, not real-world malware-detection percentages.
+  No genuine malware was downloaded or executed by GitHub Actions.
+- No source-code changes alone can provide Authenticode code signing.
+  See `docs/SentinelGuard-4.2-RELEASE-SIGNING.md` for a future signing
+  workflow and `docs/SentinelGuard-4.2-LAB-RUNBOOK.md` for independently
+  run, authorized, offline real-malware evaluation.
 
-**Priority 1 — browser URL blocking:** The optional Firefox/Chrome/Edge
-extension uses anchored literal URL filters rather than regex rules; this
-avoids the Chrome 1,000-regex-rule cap. An update error keeps working
-rules when possible and reports degraded status. When protection is OFF,
-the extension removes its blocking rules at the next synchronization.
-
-**Persistent pairing:** On Windows, the browser pairing credential is
-encrypted using the user-account-scoped Windows DPAPI and stored under
-`%LOCALAPPDATA%\SentinelLite\browser-pair.dpapi`. The browser extension
-keeps its token in browser extension storage. The API listens only on
-`127.0.0.1:17654`, so the extension can reconnect after restarting
-SentinelGuard. Use **Revoke browser pairing** to invalidate existing
-extensions. If the port is already occupied, close the conflicting app.
-
-**Priority 2 — downloads:** Windows change notifications now wake the
-monitor; a periodic folder reconciliation covers missed notifications.
-Each completed file inspection, including clean/no-indicator files, is
-recorded in Recent protection events and export JSON. The events may
-contain your private filenames and folder paths.
-
-**Priority 3 — optional Scan & Run:** Separate opt-in switch, OFF by
-default. Select a local `.exe` in the Windows picker, inspect the file,
-then approve or cancel the launch in a confirmation dialog. An approval
-ticket expires after 90 seconds, is usable once, and is bound to the
-executable's SHA-256 and size. The app checks the file again before
-starting it; a change requires a new review. A residual check-to-execution
-race remains possible. No system-wide execution interception, driver,
-Windows policy modification, network executable, scripts or shortcuts.
-Programs launched using Explorer or other applications do not pass
-through this prompt. SentinelGuard does not guarantee an executable safe.
-
-**Priority 4 — validation:** The exact Claude inert sample corpus is
-generated only in isolated CI tests, never executed. Original Stage
-6–12 synthetic test matrices remain. We also scan installed Windows
-system executables as real benign controls (without launching them).
-EICAR checks test a standard harmless antivirus test signature; they
-do not establish independent detection rates against real malware.
-Use established primary antivirus and Windows security features.
-
-New Scan & Run events include selected program path, timestamp, heuristic
-score, whether the user declined or approved, execution failures and
-file-change/expiry denials. Turning on active scanning does NOT enable
-Scan & Run or auto-quarantine; both are separately OFF by default.
-
-### Optional external holdout evaluation (development only)
-
-A separate third-party inert corpus can be evaluated without running its
-samples. Create `labels.json` in the corpus directory containing an array:
-`[{"file":"example.exe","label":"suspicious"},{"file":"harmless.txt","label":"benign"}]`.
-
-From the **Go source directory**, set
-`SENTINELGUARD_EXTERNAL_CORPUS` to the absolute corpus folder path,
-then run `go test -run '^TestV41ExternalLabeledCorpus$' -v`.
-The tool prints TP/FN/FP/TN, never executes samples and rejects linked,
-traversal or malformed entries. This evaluation does not download malware,
-does not make the external sample labels reliable, and is not a substitute
-for accredited antivirus laboratory testing.
+**Keep your existing antivirus on. Never override your antivirus's quarantine
+or security warnings just to test SentinelGuard.**
