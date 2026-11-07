@@ -29,6 +29,9 @@ type Server struct {
     active *ActiveMonitor
     extensionToken string // read-only browser companion credential
     pairMu sync.RWMutex
+    launchMu sync.Mutex
+    launchTickets map[string]launchTicket
+    launchRunner func(string) error
     pairPersisted bool
 	app     *App
 	token   string
@@ -422,6 +425,7 @@ func (s *Server) routes() http.Handler {
 		go func() { time.Sleep(200 * time.Millisecond); os.Exit(0) }()
 	})
 	registerActiveRoutes(mux,s)
+    registerLaunchRoutes(mux,s)
 	return s.secure(mux)
 }
 

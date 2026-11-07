@@ -39,6 +39,9 @@ type ActiveStatus struct {
     Events []ActiveEvent `json:"events"`
     WatcherMode string `json:"watcherMode"`
     LaunchReviewEnabled bool `json:"launchReviewEnabled"`
+    LaunchReviews int64 `json:"launchReviews"`
+    LaunchAllowed int64 `json:"launchAllowed"`
+    LaunchDenied int64 `json:"launchDenied"`
     Notice string `json:"notice"`
 }
 type ActiveMonitor struct {
@@ -46,6 +49,7 @@ type ActiveMonitor struct {
     enabled bool
     autoQuarantine bool
     launchReviewEnabled bool
+    launchReviews,launchAllowed,launchDenied int64
     wake chan struct{}
     stopWatch context.CancelFunc
     watched []string
@@ -68,7 +72,7 @@ func newActiveMonitor(vault *Vault) *ActiveMonitor {
 }
 func (a *ActiveMonitor) snapshot() ActiveStatus {
     a.mu.RLock();defer a.mu.RUnlock()
-    out:=ActiveStatus{Edition:"SentinelGuard 4.1",Enabled:a.enabled,AutoQuarantine:a.autoQuarantine,LaunchReviewEnabled:a.launchReviewEnabled,WatcherMode:activeNativeWatcherMode(),
+    out:=ActiveStatus{Edition:"SentinelGuard 4.1",Enabled:a.enabled,AutoQuarantine:a.autoQuarantine,LaunchReviewEnabled:a.launchReviewEnabled,WatcherMode:activeNativeWatcherMode(),LaunchReviews:a.launchReviews,LaunchAllowed:a.launchAllowed,LaunchDenied:a.launchDenied,
         WatchedFolders:append([]string{},a.watched...),Inspected:a.inspected,Flagged:a.flagged,
         Quarantined:a.quarantined,LastError:a.lastError,Events:append([]ActiveEvent{},a.events...),
         Notice:"Opt-in user-mode monitoring; Windows filesystem change notifications with periodic reconciliation. Files are inspected after writes settle, not before execution. Scan & Run is an optional pre-launch review only when the user explicitly launches from SentinelGuard, not a system-wide executable blocker. Keep your main antivirus enabled."}
@@ -77,6 +81,24 @@ func (a *ActiveMonitor) snapshot() ActiveStatus {
 func (a *ActiveMonitor) appendEventLocked(e ActiveEvent) {
     if len(a.events)>=250 {copy(a.events,a.events[1:]);a.events[len(a.events)-1]=e
     } else {a.events=append(a.events,e)}
+}
+func (a *ActiveMonitor) setLaunchReview(value bool){
+    a.mu.Lock()
+    a.launchReviewEnabled=value
+    a.appendEventLocked(ActiveEvent{At:time.Now(),Action:map[bool]string{true:"launch-review-enabled",false:"launch-review-disabled"}[value],Reason:"User changed opt-in Scan & Run setting"})
+    a.mu.Unlock()
+}
+func (a *ActiveMonitor) recordLaunch(path,action,reason string,score int){
+    a.mu.Lock()
+    a.appendEventLocked(ActiveEvent{At:time.Now(),Path:path,Action:action,Reason:reason,Score:score})
+    if action=="launch-reviewed"{a.launchReviews++}
+    if action=="launch-approved"{a.launchAllowed++}
+    if action=="launch-denied"||action=="launch-cancelled"{a.launchDenied++}
+    a.mu.Unlock()
+}
+func (a *ActiveMonitor) launchReviewOn()bool{
+    a.mu.RLock();defer a.mu.RUnlock()
+    return a.enabled&&a.launchReviewEnabled
 }
 func (a *ActiveMonitor) setAutoQuarantine(value bool) {
     a.mu.Lock();a.autoQuarantine=value;a.mu.Unlock()

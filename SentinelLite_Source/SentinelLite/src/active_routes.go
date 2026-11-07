@@ -42,6 +42,13 @@ func registerActiveRoutes(mux *http.ServeMux,s *Server){
         s.active.setAutoQuarantine(req.Enabled)
         sendJSON(w,s.active.snapshot())
     })
+    mux.HandleFunc("/api/active/launch-toggle",func(w http.ResponseWriter,r *http.Request){
+        if !requirePost(w,r){return}
+        var req struct{Enabled bool}
+        if err:=readJSON(r,&req);err!=nil{apiError(w,400,err);return}
+        s.active.setLaunchReview(req.Enabled)
+        sendJSON(w,s.active.snapshot())
+    })
     mux.HandleFunc("/api/active/watch",func(w http.ResponseWriter,r *http.Request){
         if !requirePost(w,r){return}
         var req struct{ Path string }
