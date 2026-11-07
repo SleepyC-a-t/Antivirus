@@ -22,6 +22,13 @@ func TestSafetyPassiveScanCannotSpawnShells(t *testing.T) {
         "os_windows.go": true, // explicit Open Location/Browser/Security actions
         "launch_windows.go": true, // one-time approved Scan & Run only
     }
+    // These helpers need *exec.Cmd as a TYPE, but still may not spawn or
+    // start a process themselves. Unlike the three explicit user-action
+    // entrypoints, they remain under the AST process-launch call ban.
+    allowedExecTypeImports := map[string]bool{
+        "defender_command_windows.go": true,
+        "defender_command_other.go": true,
+    }
     scanned := 0
     for _,entry := range entries {
         filename:=entry.Name()
@@ -32,7 +39,7 @@ func TestSafetyPassiveScanCannotSpawnShells(t *testing.T) {
         for _,imp:=range file.Imports{
             v,err:=strconv.Unquote(imp.Path.Value)
             if err!=nil {t.Fatal(err)}
-            if v=="os/exec" && !explicitlyUserInitiated[filename] {
+            if v=="os/exec" && !explicitlyUserInitiated[filename] && !allowedExecTypeImports[filename] {
                 t.Errorf("%s: passive module imports subprocess launcher os/exec",filename)
             }
         }
