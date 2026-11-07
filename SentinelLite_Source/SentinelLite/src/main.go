@@ -386,7 +386,9 @@ func (s *Server) routes() http.Handler {
 		skippedPaths := s.app.skippedSnapshot()
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Content-Disposition", `attachment; filename="SentinelGuard_v4.0_Report.json"`)
-		sendJSON(w, map[string]any{"product": "SentinelGuard", "version": "4.0", "exportedAt": time.Now(), "status": st, "findings": fs, "skippedPaths": skippedPaths, "notice": "These findings may be false positives. Defender scans are separate from heuristic scans."})
+		report:=map[string]any{"product": "SentinelGuard", "version": "4.0", "exportedAt": time.Now(), "status": st, "findings": fs, "skippedPaths": skippedPaths, "notice": "These findings may be false positives. Defender scans are separate from heuristic scans."}
+        if s.active!=nil {report["liveProtection"]=s.active.snapshot()}
+        sendJSON(w,report)
 	})
 	mux.HandleFunc("/api/exit", func(w http.ResponseWriter, r *http.Request) {
 		if !requirePost(w, r) {
