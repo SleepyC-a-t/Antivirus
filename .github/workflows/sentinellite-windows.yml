@@ -1,11 +1,11 @@
-name: SentinelGuard 4.1 — desktop and optional active protection
+name: SentinelGuard 4.2 — desktop and optional active protection
 on:
   pull_request:
     paths:
       - '.github/workflows/sentinellite-windows.yml'
       - 'SentinelLite_Source/**'
       - 'Active_Edition/**'
-      - 'SentinelGuard-4.1.exe'
+      - 'docs/SentinelGuard-4.2-*.md'
   push:
     branches: [main]
     paths:
@@ -18,14 +18,14 @@ permissions:
   contents: read
 
 concurrency:
-  group: sentinelguard-v41-${{ github.ref }}
+  group: sentinelguard-v42-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   windows-validation:
-    name: Test, build, and launch SentinelGuard 4.1 on Windows
+    name: Test, build, and launch SentinelGuard 4.2 on Windows
     runs-on: windows-latest
-    timeout-minutes: 22
+    timeout-minutes: 35
     defaults:
       run:
         shell: pwsh
@@ -53,13 +53,13 @@ jobs:
         run: go test -count=1 -v ./...
       - name: Build desktop Windows executable
         run: |
-          $exe = Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.1.exe'
+          $exe = Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.2.exe'
           go build -trimpath -ldflags '-s -w -H windowsgui' -o $exe .
           if ($LASTEXITCODE -ne 0 -or !(Test-Path $exe)) { throw 'Windows desktop build failed' }
           Get-FileHash -Algorithm SHA256 $exe | Format-List
       - name: Headless Windows startup smoke test
         run: |
-          $exe = Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.1.exe'
+          $exe = Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.2.exe'
           $env:SENTINELGUARD_TEST_NO_GUI='1'
           $app=Start-Process -FilePath $exe -WorkingDirectory $env:RUNNER_TEMP -PassThru
           try {
@@ -95,27 +95,49 @@ jobs:
           node --check ../browser-extension-firefox/popup.js
           node browser_rules.test.cjs
           node -e "const fs=require('fs');const a=JSON.parse(fs.readFileSync('manifest.json','utf8'));const b=JSON.parse(fs.readFileSync('../browser-extension-firefox/manifest.json','utf8'));if(!a.background.service_worker||a.background.scripts||!b.background.scripts||b.background.service_worker)process.exit(1)"
-      - name: Assemble v4.1 release folder
+      - name: Assemble v4.2 release folder
         shell: pwsh
         working-directory: .
         run: |
-          $package=Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.1'
+          $package=Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.2'
           New-Item -ItemType Directory -Force -Path $package | Out-Null
-          Copy-Item (Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.1.exe') $package
+          Copy-Item (Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.2.exe') $package
           Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'Active_Edition/browser-extension') (Join-Path $package 'browser-extension') -Recurse
           Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'Active_Edition/browser-extension-firefox') (Join-Path $package 'browser-extension-firefox') -Recurse
           Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'Active_Edition/README.md') (Join-Path $package 'README.txt')
-      - name: Publish verified v4 Windows build
+      - name: Create reproducible distribution ZIP and SHA-256 manifest
+        shell: pwsh
+        working-directory: .
+        run: |
+          $package=Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.2'
+          $docs=Join-Path $package 'docs'
+          New-Item -ItemType Directory -Force -Path $docs | Out-Null
+          Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'docs/SentinelGuard-4.2-*.md') $docs
+          $zip=Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.2.zip'
+          Compress-Archive -Path "$package/*" -DestinationPath $zip -CompressionLevel Optimal -Force
+          $hash=(Get-FileHash -Algorithm SHA256 $zip).Hash.ToLowerInvariant()
+          "$hash  SentinelGuard-4.2.zip" | Set-Content -Encoding ascii (Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.2.SHA256')
+          Get-Content (Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.2.SHA256')
+      - name: Publish v4.2 CI-built ZIP and checksum
         uses: actions/upload-artifact@v4
         with:
-          name: SentinelGuard-4.1-Windows-Tested
-          path: ${{ runner.temp }}/SentinelGuard-4.1/
+          name: SentinelGuard-4.2-CI-Build-ZIP
+          path: |
+            ${{ runner.temp }}/SentinelGuard-4.2.zip
+            ${{ runner.temp }}/SentinelGuard-4.2.SHA256
+          if-no-files-found: error
+          retention-days: 30
+      - name: Publish verified v4.2 Windows CI build
+        uses: actions/upload-artifact@v4
+        with:
+          name: SentinelGuard-4.2-Windows-CI-Built
+          path: ${{ runner.temp }}/SentinelGuard-4.2/
           if-no-files-found: error
           retention-days: 14
       - name: Publish resolved Go module checksums for source reproducibility
         uses: actions/upload-artifact@v4
         with:
-          name: SentinelGuard-4.1-Go-Dependency-Lock
+          name: SentinelGuard-4.2-Go-Dependency-Lock
           path: |
             SentinelLite_Source/SentinelLite/src/go.mod
             SentinelLite_Source/SentinelLite/src/go.sum
