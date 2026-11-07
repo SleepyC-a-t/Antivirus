@@ -35,6 +35,7 @@ func verifyExecutable(path string)(string,os.FileInfo,error){
     if !strings.EqualFold(filepath.Ext(abs),".exe") {
         return "",nil,errors.New("Scan & Run supports .exe programs only; script and shortcut execution is intentionally excluded")
     }
+    if !isLocalLaunchPath(abs) {return "",nil,errors.New("network executable paths are not supported by Scan & Run")}
     st,err:=os.Lstat(abs);if err!=nil{return "",nil,err}
     if !st.Mode().IsRegular() || st.Mode()&os.ModeSymlink!=0 || isReparse(abs) {
         return "",nil,errors.New("program must be a regular local executable, not a reparse point")
@@ -86,6 +87,21 @@ func (a *ActiveMonitor) safeLaunchProgram(path string,approve LaunchApproval,lau
         a.mu.Lock();a.launchDenied++;a.mu.Unlock()
         emit("launch-inspection-failed",err.Error())
         return result,err
+    }
+    // Windows can only launch actual PE executables through this path.
+    // A text file renamed .exe is a suspicious artifact, not a runnable PE.
+    fhead,headErr:=os.Open(p)
+    var magic [2]byte
+    if headErr==nil {
+        _,headErr=io.ReadFull(fhead,magic[:])
+        fhead.Close()
+    }
+    if headErr!=nil || magic!=[2]byte{'M','Z'} {
+        result.Decision="blocked"
+        result.Message="File lacks a valid DOS MZ executable header"
+        a.mu.Lock();a.launchDenied++;a.mu.Unlock()
+        emit("launch-invalid-executable","Rejected .exe with no MZ header")
+        return result,errors.New(result.Message)
     }
     errorsFound:=[]string{}
     f:=inspectFileProtected(p,st,func(reason string){errorsFound=append(errorsFound,reason)})
