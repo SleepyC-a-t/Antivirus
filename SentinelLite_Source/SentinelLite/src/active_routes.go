@@ -26,7 +26,7 @@ func registerActiveRoutes(mux *http.ServeMux,s *Server){
     mux.HandleFunc("/api/active/extension-status",func(w http.ResponseWriter,r *http.Request){
         if r.Method!=http.MethodGet{http.Error(w,"GET required",405);return}
         snap:=s.active.snapshot()
-        sendJSON(w,map[string]any{"enabled":snap.Enabled,"edition":"SentinelGuard 4.0","paired":true,"browserProtectionNote":"The extension blocks exact addresses listed by the opted-in phishing feed; it cannot examine web page content or all HTTPS traffic."})
+        sendJSON(w,map[string]any{"enabled":snap.Enabled,"edition":"SentinelGuard 4.1","paired":true,"browserProtectionNote":"The extension blocks exact addresses listed by the opted-in phishing feed; it cannot examine web page content or all HTTPS traffic."})
     })
     mux.HandleFunc("/api/active/toggle",func(w http.ResponseWriter,r *http.Request){
         if !requirePost(w,r){return}
@@ -71,6 +71,6 @@ func registerActiveRoutes(mux *http.ServeMux,s *Server){
     mux.HandleFunc("/api/active/report",func(w http.ResponseWriter,r *http.Request){
         if r.Method!=http.MethodGet{http.Error(w,"GET required",405);return}
         w.Header().Set("Content-Disposition",`attachment; filename="SentinelGuard_v4.1_Live_Report.json"`)
-        sendJSON(w,map[string]any{"product":"SentinelGuard 4.0","version":"4.1","exportedAt":time.Now(),"status":s.active.snapshot(),"privacy":"Contains absolute file paths, scan detection reasons and local timestamps. No internet history, passwords, cookies or uploaded file contents."})
+        sendJSON(w,map[string]any{"product":"SentinelGuard 4.1","version":"4.1","exportedAt":time.Now(),"status":s.active.snapshot(),"privacy":"Contains absolute file paths, scan detection reasons and local timestamps. No internet history, passwords, cookies or uploaded file contents."})
     })
 }
