@@ -123,3 +123,17 @@ New Scan & Run events include selected program path, timestamp, heuristic
 score, whether the user declined or approved, execution failures and
 file-change/expiry denials. Turning on active scanning does NOT enable
 Scan & Run or auto-quarantine; both are separately OFF by default.
+
+### Optional external holdout evaluation (development only)
+
+A separate third-party inert corpus can be evaluated without running its
+samples. Create `labels.json` in the corpus directory containing an array:
+`[{"file":"example.exe","label":"suspicious"},{"file":"harmless.txt","label":"benign"}]`.
+
+From the **Go source directory**, set
+`SENTINELGUARD_EXTERNAL_CORPUS` to the absolute corpus folder path,
+then run `go test -run '^TestV41ExternalLabeledCorpus$' -v`.
+The tool prints TP/FN/FP/TN, never executes samples and rejects linked,
+traversal or malformed entries. This evaluation does not download malware,
+does not make the external sample labels reliable, and is not a substitute
+for accredited antivirus laboratory testing.

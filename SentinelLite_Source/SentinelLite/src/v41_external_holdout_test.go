@@ -36,7 +36,7 @@ func evaluateLabeledCorpus(root string)(externalEvalCounts,error){
  seen:=map[string]bool{}
  for _,entry:=range samples{
     relative:=filepath.Clean(filepath.FromSlash(entry.File))
-    if entry.File==""||filepath.IsAbs(relative)||relative=="."||relative==".."||strings.HasPrefix(relative,".."+string(filepath.Separator)){
+    if entry.File==""||!filepath.IsLocal(relative)||filepath.VolumeName(relative)!=""||filepath.IsAbs(relative)||relative=="."||relative==".."||strings.HasPrefix(relative,".."+string(filepath.Separator)){
        return counts,fmt.Errorf("invalid corpus path %q",entry.File)
     }
     if seen[relative]{return counts,fmt.Errorf("duplicate label path: %q",entry.File)}
