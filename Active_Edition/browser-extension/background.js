@@ -22,7 +22,7 @@ function safePhishingURLs(feedText) {
   for(const candidate of feedText.split(/\r?\n/)){
     if(urls.length>=MAX_RULES) break;
     const line=candidate.trim();
-    if(!line || line.length>1000 || line.startsWith("#")) continue;
+    if(!line || line.length>1000 || line.startsWith("#") || /[|*^]/.test(line)) continue;
     try{
       const u=new URL(line);
       if((u.protocol!=="http:"&&u.protocol!=="https:")||u.username||u.password)continue;
