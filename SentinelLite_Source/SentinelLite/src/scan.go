@@ -462,6 +462,8 @@ func inspectFileDetailed(p string, info os.FileInfo, onReadError func(string)) *
             maxRead = 4096
         case ".txt":
             maxRead = 64 * 1024
+        case ".pdf":
+            maxRead = 512 * 1024
         }
 		if ext==".lnk" { maxRead=128*1024 }
         if info.Size() <= 32*1024*1024 && maxRead > info.Size() {
@@ -511,6 +513,7 @@ func inspectFileDetailed(p string, info os.FileInfo, onReadError func(string)) *
 					add(80, "Valid PE executable header disguised as a document or image")
 				}
 				inspectPEFileMetadata(buf, ext, &score, &reasons)
+                if ext==".pdf" {inspectPDFStructure(buf,&score,&reasons)}
 				inspectStage9Content(name, ext, buf, &score, &reasons)
 				inspectStage10Content(name, ext, buf, &score, &reasons)
 				inspectStage11Content(name, ext, buf, &score, &reasons)
@@ -521,6 +524,7 @@ func inspectFileDetailed(p string, info os.FileInfo, onReadError func(string)) *
             }
 		}
 	}
+    inspectPEInternals(p,info,&score,&reasons)
 	if score < 40 {
 		return nil
 	}

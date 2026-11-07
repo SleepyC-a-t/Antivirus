@@ -58,6 +58,9 @@ func inspectZIP(p string,score *int,reasons *[]string) {
 func inspectZIPWithError(p string,score *int,reasons *[]string) error {
  zr,err:=zip.OpenReader(p);if err!=nil{return err};defer zr.Close()
  budget:=int64(2*1024*1024)
+ if ext:=strings.ToLower(filepath.Ext(p));ext==".docm"||ext==".xlsm"||ext==".pptm"{
+    inspectOOXMLMacroEntries(zr.File,score,reasons)
+ }
  entries:=0
  inspectArchiveEntriesBounded(zr.File,0,&budget,&entries,score,reasons)
  return nil
