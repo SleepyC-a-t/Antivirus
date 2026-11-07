@@ -64,14 +64,14 @@ func TestSecurityThirdPartyPEImport48PointRuleSurvey(t *testing.T) {
    symbols:=map[string]bool{}
    for _,s:=range imports{symbols[strings.ToLower(strings.SplitN(s,":",2)[0])]=true}
    score,reasons:=v42PEIndicators(symbols,false,false,false)
-   if score>=40 {
+   if score>0 {
     positive++
-    t.Logf("PE_BENIGN_IMPORT_FLAG root=%q name=%q score=%d reasons=%q",root.label,filepath.Base(file),score,reasons)
+    t.Logf("PE_BENIGN_IMPORT_ADVISORY root=%q name=%q score=%d reasons=%q",root.label,filepath.Base(file),score,reasons)
    }
   }
   all+=checked;allFlags+=positive
-  t.Logf("PE_BENIGN_SURVEY root=%q peParsed=%d 48pointTriples=%d skippedOrUnreadable=%d",root.label,checked,positive,unreadable)
+  t.Logf("PE_BENIGN_SURVEY root=%q peParsed=%d tripleImportAdvisories=%d skippedOrUnreadable=%d",root.label,checked,positive,unreadable)
  }
- t.Logf("PE_BENIGN_SURVEY_TOTAL peParsed=%d tripleImportFlags=%d expectedBenignOnly=true samplingNonrandom=true",all,allFlags)
+ t.Logf("PE_BENIGN_SURVEY_TOTAL peParsed=%d tripleImportAdvisories=%d expectedBenignOnly=true samplingNonrandom=true",all,allFlags)
  if all<20{t.Fatal("insufficient Windows benign PE imports tested")}
 }
