@@ -76,6 +76,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: SentinelGuard-4.2-Independent-Technique-Evidence
-          path: \${{ runner.temp }}/v42-independent-results.log
+          path: ${{ runner.temp }}/v42-independent-results.log
           if-no-files-found: error
           retention-days: 14
