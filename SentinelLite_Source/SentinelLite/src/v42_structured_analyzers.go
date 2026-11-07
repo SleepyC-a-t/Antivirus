@@ -27,6 +27,10 @@ func v42SectionEntropy(buf []byte)float64{
  }
  return entropy
 }
+// Injectable in tests: exercising the whole file -> PE analyzer path must
+// reach the native signature check, without starting a command interpreter.
+var verifyPESignature = v42VerifySignature
+
 func inspectV42PE(p string,st os.FileInfo,score *int,reasons *[]string){
  ext:=strings.ToLower(filepath.Ext(p))
  switch ext{case ".exe",".dll",".sys",".scr",".cpl":default:return}
@@ -63,7 +67,7 @@ func inspectV42PE(p string,st os.FileInfo,score *int,reasons *[]string){
  *reasons=append(*reasons,indicators...)
  // A trusted Windows Authenticode signature is exculpatory context, not
  // proof of safety. Avoid expensive trust verification for every PE.
- if sig,_:=v42VerifySignature(p);strings.HasPrefix(sig,"Trusted"){
+ if sig,_:=verifyPESignature(p);strings.HasPrefix(sig,"Trusted"){
    addition-=20
    *reasons=append(*reasons,"Trusted Authenticode signature reduces the PE heuristic score (not a guarantee of safety)")
  }
