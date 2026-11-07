@@ -2,8 +2,14 @@
 package main
 
 import (
+ "context"
+ "encoding/base64"
+ "encoding/binary"
  "errors"
  "fmt"
+ "os/exec"
+ "strings"
+ "time"
  "os"
  "path/filepath"
  "runtime"
@@ -76,9 +82,43 @@ func splitZoneLines(s string)[]string {
  return lines
 }
 func verifiedSignatureStatus(path string)(string,string){
- // Authenticode verification requires WinVerifyTrust and publisher certificate
- // chain parsing. Until implemented, never suggest a file is signed/trusted.
- return "Not verified","Not available"
+ // Windows Get-AuthenticodeSignature invokes WinVerifyTrust and certificate
+ // chain evaluation. Execute only Microsoft's system PowerShell interpreter
+ // (NOT the selected program). Strict 4-second timeout, no profile, no
+ // shell expansion of an untrusted path. Results are advisory, never safe.
+ systemRoot:=os.Getenv("SystemRoot")
+ if systemRoot=="" {systemRoot=`C:\Windows`}
+ interpreter:=filepath.Join(systemRoot,"System32","WindowsPowerShell","v1.0","powershell.exe")
+ if _,err:=os.Stat(interpreter);err!=nil{return "Unavailable (PowerShell missing)","Unknown"}
+ encodedPath:=base64.StdEncoding.EncodeToString([]byte(path))
+ script:="$p=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('"+encodedPath+"'));"+
+    "$s=Get-AuthenticodeSignature -LiteralPath $p;"+
+    "$subject=if($s.SignerCertificate){$s.SignerCertificate.Subject}else{'Unknown'};"+
+    "Write-Output ([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(([string]$s.Status)+'|'+$subject)))"
+ words:=make([]uint16,0,len(script))
+ for _,r:=range script{words=append(words,uint16(r))}
+ bytes:=make([]byte,len(words)*2)
+ for i,v:=range words{binary.LittleEndian.PutUint16(bytes[i*2:],v)}
+ ctx,cancel:=context.WithTimeout(context.Background(),4*time.Second)
+ defer cancel()
+ cmd:=exec.CommandContext(ctx,interpreter,"-NoProfile","-NonInteractive","-EncodedCommand",base64.StdEncoding.EncodeToString(bytes))
+ out,err:=cmd.Output()
+ if ctx.Err()!=nil{return "Verification timed out","Unknown"}
+ if err!=nil{return "Unavailable (signature checker failed)","Unknown"}
+ line:=strings.TrimSpace(string(out))
+ raw,err:=base64.StdEncoding.DecodeString(line)
+ if err!=nil{return "Unavailable (unrecognized response)","Unknown"}
+ parts:=strings.SplitN(string(raw),"|",2)
+ if len(parts)!=2{return "Unavailable (malformed response)","Unknown"}
+ status:=parts[0]
+ publisher:=parts[1]
+ if len(publisher)>200{publisher=publisher[:200]}
+ switch status {
+ case "Valid","NotSigned","HashMismatch","NotTrusted","UnknownError","NotSupportedFileFormat":
+     return status,publisher
+ default:
+     return "Unrecognized status: "+status,publisher
+ }
 }
 func launchReviewedExecutable(path string)error {
  // Never start a child elevated merely because SentinelGuard was started as Administrator.
