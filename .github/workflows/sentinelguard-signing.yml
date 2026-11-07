@@ -29,7 +29,8 @@ jobs:
           go test -count=1 ./...
       - name: Compile from reviewed main commit
         run: |
-          go build -trimpath -ldflags '-s -w -H windowsgui' -o (Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.1.exe') .
+          $exe=Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.1.exe'
+          go build -trimpath -ldflags '-s -w -H windowsgui' -o $exe .
       - name: Sign with an approved certificate (not supplied by ChatGPT)
         env:
           CERT_BASE64: ${{ secrets.SG_AUTHENTICODE_PFX_B64 }}
@@ -41,7 +42,7 @@ jobs:
           $pfx=Join-Path $env:RUNNER_TEMP 'signing-certificate.pfx'
           try {
             [System.IO.File]::WriteAllBytes($pfx,[Convert]::FromBase64String($env:CERT_BASE64))
-            $tool=Get-ChildItem '${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe' -ErrorAction SilentlyContinue |
+            $tool=Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue |
                   Sort-Object FullName -Descending | Select-Object -First 1
             if (-not $tool) { throw 'SignTool was not found on the Windows runner.' }
             $exe=Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.1.exe'

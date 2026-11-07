@@ -35,7 +35,11 @@ type independentSummary struct{
     Timestamp time.Time `json:"timestamp"`
     Source string `json:"source"`
     LabelProvenance string `json:"labelProvenance"`
-    TP, FN, FP, TN, Uninspected int `json:"tp,omitempty"`
+    TP int `json:"tp"`
+    FN int `json:"fn"`
+    FP int `json:"fp"`
+    TN int `json:"tn"`
+    Uninspected int `json:"uninspected"`
     Results []independentResult `json:"results"`
     Note string `json:"note"`
 }
