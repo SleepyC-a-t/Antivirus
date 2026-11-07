@@ -38,6 +38,10 @@ jobs:
         with:
           go-version-file: SentinelLite_Source/SentinelLite/src/go.mod
           cache: false
+      - name: Set up Python for inert corpus simulation
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: Resolve and verify pinned desktop dependencies
         run: |
           go mod tidy
@@ -87,6 +91,9 @@ jobs:
           node -e "const fs=require('fs');const m=JSON.parse(fs.readFileSync('manifest.json','utf8'));if(m.manifest_version!==3||!m.permissions.includes('declarativeNetRequest'))process.exit(1);"
           node --check background.js
           node --check popup.js
+          node --check ../browser-extension-firefox/background.js
+          node --check ../browser-extension-firefox/popup.js
+          node -e "const fs=require('fs');const a=JSON.parse(fs.readFileSync('manifest.json','utf8'));const b=JSON.parse(fs.readFileSync('../browser-extension-firefox/manifest.json','utf8'));if(!a.background.service_worker||a.background.scripts||!b.background.scripts||b.background.service_worker)process.exit(1)"
       - name: Assemble v4 release folder
         shell: pwsh
         working-directory: .
@@ -95,6 +102,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path $package | Out-Null
           Copy-Item (Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.0.exe') $package
           Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'Active_Edition/browser-extension') (Join-Path $package 'browser-extension') -Recurse
+          Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'Active_Edition/browser-extension-firefox') (Join-Path $package 'browser-extension-firefox') -Recurse
           Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'Active_Edition/README.md') (Join-Path $package 'README.txt')
       - name: Publish verified v4 Windows build
         uses: actions/upload-artifact@v4
@@ -124,5 +132,8 @@ jobs:
         with:
           go-version-file: SentinelLite_Source/SentinelLite/src/go.mod
           cache: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: Go race detector for concurrent scanning and watcher
-        run: go test -race -count=1 -run '^Test(Active|StandardEdition|Stage12SustainedCustomScanAndConcurrentStatus|Stage12ResourceMetricsResetAndReport|Stage12CancelledScanStopsTelemetry)' ./...
+        run: go test -race -count=1 -run '^Test(Active|StandardEdition|Stage12SustainedCustomScanAndConcurrentStatus|Stage12ResourceMetricsResetAndReport|Stage12CancelledScanStopsTelemetry|V4ActiveClaudeFullInertDownloadSimulation)' ./...
