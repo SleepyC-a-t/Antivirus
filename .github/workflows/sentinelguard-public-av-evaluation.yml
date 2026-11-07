@@ -77,6 +77,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: SentinelGuard-v4.1-Public-AV-Evaluation-Evidence
-          path: \${{ runner.temp }}/sentinelguard-public-av/
+          path: ${{ runner.temp }}/sentinelguard-public-av/
           retention-days: 14
           if-no-files-found: error
