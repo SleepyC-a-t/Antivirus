@@ -218,7 +218,8 @@ func (a *ActiveMonitor) pollOnce() {
     a.mu.RUnlock()
     if !enabled {return}
     current,truncated:=collectActiveFiles(roots)
-    candidates:=make([]string,0,20)
+    candidates:=make([]string,0,64)
+    backlog:=false
     now:=time.Now()
     a.mu.Lock()
     if !a.enabled {a.mu.Unlock();return}
@@ -235,9 +236,12 @@ func (a *ActiveMonitor) pollOnce() {
         if pending.observations<2 {continue}
         // Reduce false alarms from partially written files.
         if now.Sub(time.Unix(0,stamp.modified))<2*time.Second{continue}
+        // Never mark a file inspected if the bounded queue is full:
+        // that could silently drop dozens of new downloads during bursts.
+        if len(candidates)>=64 {backlog=true;continue}
         a.seen[p]=stamp
         delete(a.pending,p)
-        if len(candidates)<64 {candidates=append(candidates,p)}
+        candidates=append(candidates,p)
     }
     for p:=range a.pending {if _,exists:=current[p];!exists{delete(a.pending,p)}}
     a.mu.Unlock()
@@ -269,6 +273,11 @@ func (a *ActiveMonitor) pollOnce() {
         if action=="quarantined" {a.quarantined++}
         a.appendEventLocked(ActiveEvent{At:time.Now(),Path:p,Action:action,Score:f.Score,Reason:reason})
         a.mu.Unlock()
+    }
+    if backlog {
+       // Trigger another bounded pass instead of waiting up to a minute
+       // for reconciliation while newly completed files remain queued.
+       select{case a.wake<-struct{}{}:default:}
     }
 }
 // The platform notifier signals changes; periodic reconciliation catches
