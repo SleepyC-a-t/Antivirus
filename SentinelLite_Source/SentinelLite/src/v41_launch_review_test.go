@@ -11,7 +11,10 @@ func makeInertPE(t *testing.T,p string) {
     t.Helper()
     data:=make([]byte,512)
     copy(data,[]byte("MZ"))
-    copy(data[160:],[]byte("Synthetic harmless executable fixture, not a real PE"))
+    // Inert minimal PE-shaped bytes: PE signature offset 0x80. This is not a runnable program.
+    data[0x3c]=0x80
+    copy(data[0x80:],[]byte{'P','E',0,0})
+    copy(data[160:],[]byte("Synthetic harmless PE-shaped fixture; never executed"))
     if err:=os.WriteFile(p,data,0600);err!=nil{t.Fatal(err)}
 }
 func TestV41ScanAndRunRequiresIndependentOptInAndOneTimeApproval(t *testing.T){

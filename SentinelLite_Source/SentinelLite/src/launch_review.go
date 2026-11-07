@@ -53,9 +53,12 @@ func reviewedExecutable(path string)(string,os.FileInfo,error){
     f,err:=os.Open(p)
     if err!=nil{return "",nil,err}
     defer f.Close()
-    magic:=make([]byte,2)
-    if _,err:=io.ReadFull(f,magic);err!=nil{return "",nil,err}
-    if string(magic)!="MZ"{return "",nil,errors.New("not a Windows PE executable (missing MZ header)")}
+    magic:=make([]byte,4096)
+    n,readErr:=io.ReadFull(f,magic)
+    if readErr!=nil && readErr!=io.EOF && readErr!=io.ErrUnexpectedEOF{return "",nil,readErr}
+    if !isPEHeader(magic[:n]) {
+        return "",nil,errors.New("unsupported/invalid PE format: a valid MZ and PE signature are required; file cannot be reviewed for launch")
+    }
     return p,st,nil
 }
 func digestExecutable(path string)(string,error){
