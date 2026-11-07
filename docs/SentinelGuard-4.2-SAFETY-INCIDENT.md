@@ -40,3 +40,120 @@ Review the **exact latest commit** in [draft PR #19](https://github.com/SleepyC-
 ## Evidence and limitations
 
 The observed symptom is consistent with the source defect, but no recorded process-creation telemetry is available to prove it was the only cause. Removing the spawn path and hiding the explicit Defender console are testable mitigations; a full guarantee of safety or a declaration that Claude approved is **not available**. Keep the incident open until those verification gates are met.
+
+
+## Historical source reconstruction and filename-injection concern (priority 8)
+
+The **exact revoked source** at
+`c1770d9dba6ba57604e89526e29f545bf293589d:SentinelLite_Source/SentinelLite/src/launch_metadata_windows.go`
+constructed a PowerShell command by concatenating the file path into single-quoted
+PowerShell script text, *then launching powershell.exe*:
+
+```go
+escaped := strings.ReplaceAll(path, "'", "''")
+script := "$s=Get-AuthenticodeSignature -LiteralPath '" + escaped +
+    "'; if($s.SignerCertificate){$s.SignerCertificate.Subject}"
+cmd := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script)
+raw, err := cmd.Output()
+```
+
+**ASCII apostrophe:** U+0027 was doubled to U+0027 U+0027, the normal
+PowerShell single-quoted-string escape. That mitigates literal ASCII apostrophes
+in this specific embedding.
+
+**Curly / smart quote:** U+2018, U+2019, U+201A and U+201B were **not**
+normalized, doubled, or escaped. PowerShell recognizes smart quote characters
+as quote tokens in some contexts. Consequently, untrusted file paths containing
+these characters are a **possible filename-driven command-injection risk** in
+the revoked version. That risk has not been confirmed by controlled exploitation
+and no payload was executed. However, the risk is sufficient to keep the old
+build revoked. The remediation eliminates PowerShell construction altogether,
+rather than attempting to patch escaping.
+
+The original `Get-AuthenticodeSignature` command retrieved certificate
+metadata, not the scanned program's entry point. The injection concern is a
+separate potential execution path *through the interpreter itself*; it does
+not mean the scanned binary was intentionally executed.
+
+## Native trust checker after remediation (priority 4)
+
+The patched `v42VerifySignature` now:
+- Passes Windows `INVALID_HANDLE_VALUE` for `hWnd` and sets WTD_UI_NONE=2,
+  WTD_REVOKE_NONE=0, WTD_CACHE_ONLY_URL_RETRIEVAL=0x1000 and
+  WTD_REVOCATION_CHECK_NONE=0x10.
+- Uses `runtime.KeepAlive` to retain Windows API input buffers and structures.
+- Separately labels common HRESULT failures and does **not** treat no embedded
+  signature as trusted; independent catalog-signed file checking
+  (`CryptCATAdmin*`) is not implemented and is explicitly disclosed.
+- Bounds the **caller's wait** to 2.5 seconds and permits at most 2 concurrent
+  native trust calls. The native WinVerifyTrust function itself is synchronous
+  and **cannot be forcibly terminated by this timeout**. A hung invocation may
+  occupy one of the two slots indefinitely, and later verifications are reported
+  unverified rather than allowed to accumulate threads.
+- Leaves publisher text **unavailable** until native certificate extraction
+  receives an independent security review. It starts no interpreter.
+
+In particular, the current 48-point remote-injection-import PE rule remains
+correlative, **not proof of malware**. The new read-only Windows CI
+`TestSecurityThirdPartyPEImport48PointRuleSurvey` reports sampled
+third-party parsed PE counts and rule matches, while explicitly recording
+unavailable game-launcher roots rather than inventing their results.
+
+## Process counter and remaining experimental Defender boundary
+
+`status.childProcessesStarted` counts process starts initiated directly by
+SentinelGuard's selected external Defender helper. It resets per scan; heuristic
+scan expects 0. This is **application bookkeeping only, not an OS-level
+process monitor**. Scanned files never contribute to the counter because they
+are not intended to run.
+
+In explicitly selected Defender mode, a Windows Job Object is configured with
+`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`. Assignment occurs just after
+`cmd.Start`, leaving a narrow assignment race. Failure to configure or assign
+the Job Object fails closed and kills the root process. Closing the Job Object
+after completion attempts to terminate remaining descendants. The separately
+managed Windows Defender service may continue independently. Defender remains
+optional and OFF by default.
+
+## Windows Sandbox / Process Monitor independent lab runbook
+
+Only an **independent test operator**, not the affected user, should perform
+this while the incident remains on hold:
+
+1. Use a disposable Windows Sandbox or isolated Windows VM with networking and
+   clipboard/drive sharing disabled; avoid administrator access except where
+   Process Monitor/ETW capture explicitly requires it. Use no live malware and
+   no untrusted downloads.
+2. Copy only reviewed source/build artifacts and harmless benign test fixtures
+   into the isolated environment. Record commit SHA, executable SHA-256, Windows
+   build, antivirus status, and tool versions.
+3. Obtain the official Microsoft Sysinternals **Process Monitor** from a trusted
+   organizational source and verify its Authenticode signature. Set filters for
+   `Process Create` and `Process Exit`; include SentinelGuard and
+   PowerShell/CMD/console hosts, preserving both included and excluded counts.
+4. Start capture **before** launching the app. Execute the isolated benign-tree
+   heuristic full-path scan and stop it normally, then repeat a cancellation
+   mid-scan. Do **not** approve Scan & Run or execute any specimen.
+5. Export raw `.PML` and sanitized `.CSV` with timestamp, process image,
+   PID, parent PID, command line, exit status, scanned file count and trust
+   invocation count. Compare an old build only inside this isolated lab; never
+   on a personal host.
+6. Require **old `powershell.exe` count greater than zero in a fixture that
+   actually exercises the signed triple-import path**, and patched count zero
+   over the same fixture. If the ordinary benign survey does not exercise that
+   path, record it as inconclusive and use a separately labeled controlled
+   signed fixture; do not reclassify a direct-verifier control as a full-scan hit.
+7. Review event logs, close and discard the VM, then submit minimized evidence
+   and a written sign-off. Actual user-machine tests remain prohibited until
+   the independent assessor confirms the safety gate.
+
+### OS trace method under CI
+`.github/workflows/sentinelguard-v43-process-forensics.yml` checks out
+both commits on the same Windows runner, runs a common read-only expected-benign
+survey and a **separately labeled direct signed-file verification control**,
+records `v42VerifySignature` invocation counts, and requests
+`Microsoft-Windows-Kernel-Process` ETW output through `logman`,
+`Get-WinEvent`, and `tracerpt`. Raw ETLs are uploaded. Do **not** claim
+that ETW captured command lines or a parent-child tree unless the actual
+resulting event payload contains those fields. A CI headless startup test is
+not equivalent to interactive console-window observation.
