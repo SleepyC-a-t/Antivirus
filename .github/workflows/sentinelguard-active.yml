@@ -1,0 +1,36 @@
+name: SentinelGuard 4.0 — Browser companion validation
+on:
+  pull_request:
+    paths:
+      - 'Active_Edition/**'
+      - '.github/workflows/sentinelguard-active.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  extension-validation:
+    name: Validate Firefox/Chromium extension assets
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Chromium and Firefox MV3 manifests
+        run: |
+          node - <<'JS'
+          const fs=require('node:fs');
+          const prefix='Active_Edition/';
+          const c=JSON.parse(fs.readFileSync(prefix+'browser-extension/manifest.json','utf8'));
+          const f=JSON.parse(fs.readFileSync(prefix+'browser-extension-firefox/manifest.json','utf8'));
+          if(c.manifest_version!==3 || f.manifest_version!==3)throw Error('MV3 manifest expected');
+          if(!c.background.service_worker||c.background.scripts)throw Error('Chromium must use service worker only');
+          if(!f.background.scripts||f.background.service_worker)throw Error('Firefox must use background scripts only');
+          for(const m of [c,f]){
+            if(!m.permissions.includes('declarativeNetRequest'))throw Error('No declarativeNetRequest permission');
+          }
+          JS
+      - name: JavaScript syntax checks
+        run: |
+          node --check Active_Edition/browser-extension/background.js
+          node --check Active_Edition/browser-extension/popup.js
+          node --check Active_Edition/browser-extension-firefox/background.js
+          node --check Active_Edition/browser-extension-firefox/popup.js

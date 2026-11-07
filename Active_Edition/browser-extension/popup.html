@@ -1,0 +1,20 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>SentinelGuard Active</title><style>
+body{width:340px;min-height:340px;margin:0;padding:18px;font:13px system-ui;background:#0c1727;color:#e9f3fa;box-sizing:border-box}
+h2{font-size:18px;margin:0 0 8px;color:#87e9cf}p{color:#bac8da;line-height:1.45}
+label{display:block;margin:14px 0 7px;font-weight:600}
+textarea{width:100%;min-height:65px;resize:vertical;box-sizing:border-box;background:#14273b;border:1px solid #3c576a;border-radius:7px;color:#fff;padding:8px;font:11px monospace}
+button{border:1px solid #247f74;background:#194c4d;color:#e4fff5;border-radius:7px;padding:9px 12px;margin:7px 6px 4px 0;cursor:pointer}
+#status{padding:10px;background:#182b3c;border-radius:9px;white-space:pre-wrap;overflow-wrap:anywhere}
+small{color:#9ab1c2}
+</style></head><body>
+<h2>SentinelGuard Active</h2>
+<p>Pair this extension with the running Windows app. Browser blocking follows the app's ON/OFF switch (up to ~30–60s delay).</p>
+<label for="pair">Read-only pairing link</label>
+<textarea id="pair" placeholder="Paste the pairing link copied from SentinelGuard Active"></textarea>
+<button id="save">Pair / update</button><button id="disconnect">Disconnect</button>
+<label><input type="checkbox" id="feed"> Enable OpenPhish Community Feed (personal, noncommercial use)</label>
+<p><small>Only exact URLs from the feed are blocked. Feed downloads disclose your IP address to OpenPhish. No sites you visit or file contents are uploaded.</small></p>
+<button id="sync">Refresh protection</button>
+<div id="status">Checking status…</div>
+<script src="popup.js"></script></body></html>
