@@ -2,23 +2,22 @@ package main
 
 import ("testing")
 
-// Child processes are accounted for only when an external helper was
-// intentionally launched (Defender mode); no scan file is ever executed.
-func TestSecurityChildProcessCounterIsPerScanAndExported(t *testing.T){
- a:=newApp(nil)
- ctx,err:=a.begin("heuristic:custom")
- if err!=nil{t.Fatal(err)}
- if got,_:=a.snapshot();got.ChildProcessesStarted!=0{
-  t.Fatalf("new passive scan had %d child processes",got.ChildProcessesStarted)
- }
- a.recordChildStarted()
- if got,_:=a.snapshot();got.ChildProcessesStarted!=1{
-  t.Fatalf("app-initiated helper process not accounted: %d",got.ChildProcessesStarted)
- }
- a.finish(nil)
- if _,err:=a.begin("heuristic:quick");err!=nil{t.Fatal(err)}
- if got,_:=a.snapshot();got.ChildProcessesStarted!=0{
-  t.Fatalf("new scan retained old child count: %d",got.ChildProcessesStarted)
- }
- a.finish(ctx.Err())
+// The tripwire is reset on each scan. It is OS-observed on Windows; a separate
+// Windows-only integration test launches a harmless sleeping helper.
+func TestSecurityChildProcessCounterIsPerScanAndExported(t *testing.T) {
+    a:=newApp(nil)
+    if _,err:=a.begin("heuristic:custom");err!=nil{t.Fatal(err)}
+    a.mu.RLock()
+    done:=a.resourceDone
+    a.mu.RUnlock()
+    a.sampleChildProcesses(done)
+    if s,_:=a.snapshot();s.ChildProcessesObserved!=0 {
+        t.Fatalf("fresh passive scan had unexpected observed children: %+v",s.ChildProcessEntries)
+    }
+    a.finish(nil)
+    if _,err:=a.begin("heuristic:quick");err!=nil{t.Fatal(err)}
+    if s,_:=a.snapshot();s.ChildProcessesObserved!=0||len(s.ChildProcessEntries)!=0 {
+        t.Fatalf("new scan retained the previous child-process observations: %+v",s)
+    }
+    a.finish(nil)
 }
