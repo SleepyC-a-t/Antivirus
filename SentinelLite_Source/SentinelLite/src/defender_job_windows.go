@@ -5,6 +5,7 @@ package main
 import (
     "errors"
     "fmt"
+    "sync"
     "syscall"
     "unsafe"
 )
@@ -13,7 +14,7 @@ import (
 // created by the *explicitly selected* Defender helper; it does NOT control
 // MsMpEng.exe (the independent Microsoft Defender service).
 // A small Start -> Assign race remains and is reported explicitly.
-type defenderJob struct{handle syscall.Handle}
+type defenderJob struct{mu sync.Mutex; handle syscall.Handle}
 type jobBasicLimitInfo struct{
     PerProcessUserTimeLimit int64
     PerJobUserTimeLimit int64
@@ -57,7 +58,10 @@ func newDefenderJob()(*defenderJob,error){
     return job,nil
 }
 func (j *defenderJob) assign(pid int)error{
-    if j==nil||j.handle==0{return errors.New("missing Defender job")}
+    if j==nil{return errors.New("missing Defender job")}
+    j.mu.Lock()
+    defer j.mu.Unlock()
+    if j.handle==0{return errors.New("Defender job already closed")}
     const access=0x0100|0x0001 // PROCESS_SET_QUOTA | PROCESS_TERMINATE
     process,err:=syscall.OpenProcess(access,false,uint32(pid))
     if err!=nil{return fmt.Errorf("open Defender helper process: %w",err)}
@@ -67,5 +71,8 @@ func (j *defenderJob) assign(pid int)error{
     return nil
 }
 func (j *defenderJob)close(){
-    if j!=nil&&j.handle!=0{_ = syscall.CloseHandle(j.handle);j.handle=0}
+    if j==nil{return}
+    j.mu.Lock()
+    defer j.mu.Unlock()
+    if j.handle!=0{_ = syscall.CloseHandle(j.handle);j.handle=0}
 }
