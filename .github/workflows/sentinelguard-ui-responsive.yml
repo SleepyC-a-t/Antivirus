@@ -1,0 +1,33 @@
+name: SentinelGuard 4.2 — Responsive UI checks
+on:
+  pull_request:
+    paths:
+      - 'SentinelLite_Source/SentinelLite/src/ui.html'
+      - 'scripts/verify_ui.py'
+      - '.github/workflows/sentinelguard-ui-responsive.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  viewport-regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install browser test dependency
+        run: |
+          python -m pip install playwright==1.55.0
+          python -m playwright install --with-deps chromium
+      - name: Verify responsive layouts and appearance behavior without scanner
+        run: python scripts/verify_ui.py
+      - name: Save desktop and narrow-window screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SentinelGuard-42-UI-Viewport-Previews
+          path: ui-previews/*.png
+          if-no-files-found: warn
+          retention-days: 14
