@@ -47,6 +47,11 @@ func TestSecurityRealScanPipelineReachesTripleImportSignatureHook(t *testing.T){
  if err:=os.WriteFile(corroborated,overlay,0600);err!=nil{t.Fatal(err)}
  control:=filepath.Join(dir,"benign-document.txt")
  if err:=os.WriteFile(control,[]byte("ordinary document"),0600);err!=nil{t.Fatal(err)}
+ // Override only the full-scan drive enumerator; the real full-scan
+ // worker, file traversal, PE inspection and trust hook remain unchanged.
+ savedRoots:=fullScanDriveRoots
+ fullScanDriveRoots=func()[]string{return []string{dir}}
+ defer func(){fullScanDriveRoots=savedRoots}()
  saved:=verifyPESignature
  calls:=0
  verifyPESignature=func(path string)(string,string){
@@ -56,8 +61,8 @@ func TestSecurityRealScanPipelineReachesTripleImportSignatureHook(t *testing.T){
  }
  defer func(){verifyPESignature=saved}()
  app:=newApp(nil)
- ctx,err:=app.begin("heuristic:custom");if err!=nil{t.Fatal(err)}
- err=app.runHeuristic(ctx,"custom",dir)
+ ctx,err:=app.begin("heuristic:full");if err!=nil{t.Fatal(err)}
+ err=app.runHeuristic(ctx,"full","")
  app.finish(err)
  if err!=nil{t.Fatal(err)}
  st,findings:=app.snapshot()
