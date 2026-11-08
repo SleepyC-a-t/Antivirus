@@ -24,6 +24,7 @@ func TestSecurityProcessCreationFunctionAllowlistAndReachability(t *testing.T) {
  files:=map[string]string{}
  nativeProcessProcs:=map[string]string{}
  nativeProcVars:=map[string]string{}
+ functionVars:=map[string]string{}
  fset:=token.NewFileSet()
  entries,err:=os.ReadDir(".");if err!=nil{t.Fatal(err)}
  for _,e:=range entries {
@@ -35,6 +36,11 @@ func TestSecurityProcessCreationFunctionAllowlistAndReachability(t *testing.T) {
     for _,spec:=range gen.Specs {
      v,ok:=spec.(*ast.ValueSpec);if !ok{continue}
      for i,expr:=range v.Values {
+      // Function variables such as verifyPESignature and fullScanDriveRoots
+      // are edges from scan workers to their default implementations.
+      if ident,ok:=expr.(*ast.Ident);ok && i<len(v.Names){
+         functionVars[v.Names[i].Name]=ident.Name
+      }
       call,ok:=expr.(*ast.CallExpr);if !ok||len(call.Args)!=1{continue}
       sel,ok:=call.Fun.(*ast.SelectorExpr);if !ok||sel.Sel.Name!="NewProc"{continue}
       arg,ok:=call.Args[0].(*ast.BasicLit);if !ok{continue}
@@ -66,6 +72,9 @@ func TestSecurityProcessCreationFunctionAllowlistAndReachability(t *testing.T) {
    }
    return true
   })
+ }
+ for _,fnVar:=range []string{"verifyPESignature","fullScanDriveRoots"}{
+    if functionVars[fnVar]=="" {t.Errorf("scanner function variable %s has no tracked implementation; reachability incomplete",fnVar)}
  }
  if len(funcs)<35{t.Fatalf("parsed only %d functions; security graph incomplete",len(funcs))}
  calls:=map[string]map[string]bool{}
@@ -103,6 +112,7 @@ func TestSecurityProcessCreationFunctionAllowlistAndReachability(t *testing.T) {
      }
     }
    }
+   if target,ok:=functionVars[callee];ok {callee=target}
    if funcs[callee]!=nil{calls[name][callee]=true}
    return true
   })
