@@ -122,6 +122,13 @@ func (a *App) runDefender(ctx context.Context, mode, custom string) error {
             job.close()
             return fmt.Errorf("Defender helper could not be placed in a kill-on-close job: %w",err)
         }
+        // No Defender helper instruction has run before Job assignment.
+        if err:=resumeDefenderProcess(cmd.Process.Pid);err!=nil{
+            _=cmd.Process.Kill()
+            _=cmd.Wait()
+            job.close()
+            return fmt.Errorf("Defender helper could not be resumed safely: %w",err)
+        }
         // cmd.Wait alone may block if descendants inherit stdout/stderr.
         // Closing the kill-on-close Job Object immediately on cancellation
         // terminates its assigned helper tree before waiting for pipe closure.
