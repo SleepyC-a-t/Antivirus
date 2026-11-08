@@ -3,6 +3,18 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>SentinelGuard 4.2 — Local Malware Review</title>
+<meta name="theme-color" content="#080f19" id="appThemeColor">
+<script>
+/* Appearance only. No scanner state or backend calls. Run before CSS paints. */
+(function(){
+  const key='sentinelguard-appearance-v42';
+  let preferred='system';
+  try { const saved=localStorage.getItem(key); if(['light','dark','system'].includes(saved)) preferred=saved; } catch (_) {}
+  const systemDark=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches;
+  document.documentElement.dataset.appearance=preferred;
+  document.documentElement.dataset.scheme=preferred==='system'?(systemDark?'dark':'light'):preferred;
+})();
+</script>
 <style>
 :root{color-scheme:dark;--bg:#090e18;--panel:#111b2a;--panel2:#152237;--line:#27364b;--text:#e9eef8;--sub:#9facbf;--accent:#75e0c1;--accent2:#37b899;--warning:#f9cb7b;--red:#fe9393;--blue:#82b7fa}
 *{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse 90% 60% at 85% -10%,#19324a 0%,var(--bg) 70%);font:14px/1.5 system-ui,"Segoe UI",Arial,sans-serif;color:var(--text);min-height:100vh}button,input,select{font:inherit}button{cursor:pointer}button:disabled{opacity:.44;cursor:not-allowed}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
@@ -46,11 +58,251 @@ button{background:#203149;border:1px solid #39516b;color:#dce7f9;padding:10px 14
 .active-events{max-height:220px;overflow:auto;background:#07131c;border-radius:10px;padding:10px;font-size:12px}
 .active-events>div{padding:6px 2px;border-bottom:1px solid #2a3d48;overflow-wrap:anywhere}
 .active-watch{white-space:pre-wrap;color:var(--sub);font-size:12px;overflow-wrap:anywhere}
+
+/* SentinelGuard 4.2 · responsive visual overhaul · UI ONLY.
+   Theme applies at document level, not monitor level.
+   The scanner/permission/security behaviors are unchanged. */
+:root {
+  --bg:#080f19; --panel:#121e2d; --panel2:#172738; --line:#2b3d50;
+  --text:#edf3fa; --sub:#a9b9c9; --accent:#63dcc5; --accent2:#2cbaa2;
+  --warning:#ffd08b; --red:#ff9d9d; --blue:#93c1ff;
+  --surface-high:#1b2c3f; --surface-low:#0d1826; --input-bg:#0d1a29;
+  --field-border:#3b5168; --interactive-bg:#1c3044;
+  --hover-bg:#29435a; --muted-ink:#a9b9c9; --soft-shadow:0 12px 34px rgba(0,0,0,.18);
+  --warning-bg:#32281b; --warning-line:#856541; --warning-ink:#ffe2b7;
+  --accent-tint:rgba(99,220,197,.105); --danger-bg:#432631; --danger-line:#985663;
+  --info-bg:#15283a; --info-line:#3c6578; --info-ink:#c7e0f0;
+  --table-hover:#1b3144; --backdrop:rgba(2,8,16,.78);
+  --stripe:rgba(93,164,169,.025);
+  --radius:16px;
+  color-scheme:dark;
+}
+html[data-scheme="light"] {
+  --bg:#f4f7fa; --panel:#ffffff; --panel2:#f1f6f9; --line:#d9e2ea;
+  --text:#172838; --sub:#586c7f; --accent:#087e73; --accent2:#087c73;
+  --warning:#94611b; --red:#b94351; --blue:#245ea1;
+  --surface-high:#eaf1f5; --surface-low:#f9fbfc; --input-bg:#f8fbfd;
+  --field-border:#b8c9d6; --interactive-bg:#e9f1f4;
+  --hover-bg:#dcebf0; --muted-ink:#576a7e; --soft-shadow:0 12px 38px rgba(34,59,78,.075);
+  --warning-bg:#fff4dc; --warning-line:#e2c280; --warning-ink:#684a16;
+  --accent-tint:rgba(8,126,115,.085); --danger-bg:#fff0f1; --danger-line:#e0b5b8;
+  --info-bg:#eff7fa; --info-line:#bed7e1; --info-ink:#365568;
+  --table-hover:#f0f7f9; --backdrop:rgba(21,34,47,.38);
+  --stripe:rgba(45,103,114,.018);
+  color-scheme:light;
+}
+html,body{min-width:0;max-width:100%;background:var(--bg);color:var(--text)}
+html{scroll-behavior:smooth}
+body {
+  background-image:radial-gradient(ellipse 68% 42% at 89% -12%,var(--accent-tint),transparent 76%),
+   linear-gradient(135deg,var(--stripe),transparent 42%);
+  font-family:"Segoe UI Variable","Segoe UI",system-ui,sans-serif;
+  font-size:14px;line-height:1.52;overflow-x:hidden;
+}
+.wrap{max-width:1560px;width:100%;margin:auto;padding:clamp(13px,1.8vw,32px) clamp(12px,2.1vw,32px) 42px}
+.top{gap:14px;margin-bottom:clamp(16px,2vw,26px);flex-wrap:wrap}
+.top-actions{gap:8px;justify-content:flex-end;min-width:0}
+.brand{min-width:0;gap:12px}
+.brand h1{color:var(--text);font-size:clamp(20px,1.7vw,25px);letter-spacing:-.7px}
+.brand small{color:var(--sub)}
+.mark{background:var(--accent-tint);border:1px solid var(--accent2);color:var(--accent);
+ border-radius:15px;box-shadow:none;width:46px;height:46px}
+.tag{color:var(--accent);border-color:var(--line);background:var(--accent-tint);padding:7px 10px}
+.appearance-control{display:inline-flex;align-items:center;gap:2px;background:var(--surface-low);
+ border:1px solid var(--line);padding:3px;border-radius:12px}
+.appearance-label{font-size:11px;font-weight:650;color:var(--sub);margin:0 7px;white-space:nowrap}
+.appearance-control .appearance-option{border:1px solid transparent;background:transparent;color:var(--sub);
+ border-radius:8px;display:inline-flex;align-items:center;gap:5px;padding:7px 9px;font-size:12px;
+ font-weight:680;box-shadow:none;transition:background .15s ease,color .15s ease}
+.appearance-control .appearance-option:hover{color:var(--text);background:var(--hover-bg)}
+.appearance-control .appearance-option[aria-pressed="true"]{
+ color:var(--accent);background:var(--accent-tint);border-color:var(--line);
+ box-shadow:0 1px 4px rgba(0,0,0,.07)}
+button,input,select{color:var(--text)}
+button{background:var(--interactive-bg);border:1px solid var(--field-border);color:var(--text);
+ border-radius:10px;min-height:36px;transition:background-color .16s,border-color .16s,transform .16s}
+button:hover:not(:disabled){background:var(--hover-bg)}
+button:active:not(:disabled){transform:translateY(1px)}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--bg);font-weight:750}
+html[data-scheme="light"] button.primary{color:#fff}
+button.primary:hover:not(:disabled){background:var(--accent2);color:var(--bg)}
+html[data-scheme="light"] button.primary:hover:not(:disabled){color:#fff}
+button.outline,.row-actions button{background:transparent;border-color:var(--line);color:var(--text)}
+button.danger{background:var(--danger-bg);border-color:var(--danger-line);color:var(--red)}
+button.danger:hover:not(:disabled){background:var(--danger-bg);filter:brightness(.95)}
+button:focus-visible,input:focus-visible,select:focus-visible,.tab:focus-visible,
+summary:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+:focus:not(:focus-visible){outline:none}
+.hero{margin:5px 0 clamp(17px,2vw,24px)}
+.hero h2{font-size:clamp(25px,2.35vw,37px);margin:5px 0 7px;color:var(--text);
+ background:none;-webkit-text-fill-color:currentColor;letter-spacing:-1.05px}
+.hero p,.muted,.section-desc,.hint,.small,.summary,.footer{color:var(--sub)}
+.eyebrow{color:var(--accent);letter-spacing:1.5px}
+.shell{display:grid;grid-template-columns:minmax(252px,320px) minmax(0,1fr);gap:clamp(11px,1.45vw,22px);align-items:start}
+.shell>aside,.shell>main,.shell>main>*{min-width:0}
+.shell>main{container-type:inline-size;container-name:scanner-main}
+.shell>aside .panel{position:static;max-height:none;overflow:visible;scrollbar-width:thin}
+.panel,.metric,.resource-tile{
+ border-color:var(--line);background:var(--panel);color:var(--text);box-shadow:var(--soft-shadow)}
+.panel{padding:clamp(14px,1.5vw,22px);border-radius:var(--radius)}
+.panel h3{font-size:15px;letter-spacing:-.2px}
+.metrics{grid-template-columns:repeat(3,minmax(0,1fr));gap:clamp(8px,1vw,14px)}
+.metric{background:var(--panel);padding:clamp(12px,1.3vw,19px);min-width:0}
+.metric b{color:var(--text);font-size:clamp(22px,2.1vw,32px);letter-spacing:-.8px}
+.metric span{color:var(--sub);font-size:11px;font-weight:600}
+.resource-panel{padding:clamp(12px,1.3vw,19px)}
+.resource-tile{background:var(--surface-low);box-shadow:none;padding:12px}
+.resource-tile b{color:var(--text);font-size:clamp(17px,1.45vw,22px)}
+.resource-tile small,.resource-foot{color:var(--sub)}
+.resource-heading h3,.active-heading h2{color:var(--text)}
+.choice{background:var(--surface-low);border-color:var(--line);border-radius:11px;transition:border-color .15s,background .15s}
+.choice:has(input:checked){background:var(--accent-tint);border-color:var(--accent2)}
+.choice b,.control-label{color:var(--text)}
+.choice span{color:var(--sub)}
+.choice input[type=radio]{accent-color:var(--accent)}
+input[type=text],.tools select,select{background:var(--input-bg);color:var(--text);border-color:var(--field-border);border-radius:9px}
+input::placeholder{color:var(--sub);opacity:.8}
+.info{background:var(--info-bg);border-color:var(--info-line);color:var(--info-ink)}
+.info strong{color:var(--text)}
+.info.warn{background:var(--warning-bg);border-color:var(--warning-line);color:var(--warning-ink)}
+.info.warn strong{color:var(--warning-ink)}
+#securityHoldBanner{margin:0 0 18px;border-radius:12px;position:sticky;top:0;z-index:12;
+ box-shadow:0 5px 18px rgba(0,0,0,.08);line-height:1.6;backdrop-filter:blur(8px)}
+html[data-scheme="light"] #securityHoldBanner{box-shadow:0 5px 18px rgba(49,59,73,.10)}
+.progress{background:var(--surface-low);border-color:var(--line)}
+.path-current{color:var(--sub)}
+.meter{background:var(--surface-high)}
+.meter i{background:linear-gradient(90deg,transparent,var(--accent),transparent)}
+.dot.running{background:var(--accent)}
+.active-panel{background:var(--panel);border-color:var(--line);border-radius:var(--radius)}
+.active-bad,.error{color:var(--red)}
+.active-good{color:var(--accent)}
+.active-sub,.active-watch{color:var(--sub)}
+.active-stats>div,.active-events{background:var(--surface-low);border:1px solid var(--line);color:var(--text)}
+.active-options{border-top-color:var(--line)}
+.active-events>div{border-bottom-color:var(--line)}
+.content-panel{border-color:var(--line)}
+.tabs,.tools,td{border-color:var(--line)}
+.tabs{gap:4px;overflow-x:auto;scrollbar-width:thin}
+.tab{color:var(--sub);min-height:42px;white-space:nowrap}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.tools{gap:8px}
+.table-scroll{scrollbar-width:thin;max-height:min(590px,64dvh)}
+table{min-width:620px}
+th{background:var(--surface-low);border-color:var(--line);color:var(--sub)}
+td{border-color:var(--line)}
+tr:hover td{background:var(--table-hover)}
+.file-name{color:var(--text)}
+.file-path{color:var(--sub)}
+.pill{background:var(--warning-bg);color:var(--warning)}
+.pill.high{background:var(--danger-bg);color:var(--red)}
+.pill.elevated{background:var(--warning-bg);color:var(--warning)}
+.pill.review{background:var(--info-bg);color:var(--blue)}
+.pill.defender{background:var(--accent-tint);color:var(--accent)}
+.toolbar-foot{background:var(--surface-low)}
+.toolbar-foot small,.empty,.empty strong{color:var(--sub)}
+.empty strong{color:var(--text)}
+.report-privacy{background:var(--surface-low);border-color:var(--line);color:var(--sub)}
+.report-privacy summary{color:var(--text)}
+.modalback{background:var(--backdrop);backdrop-filter:blur(5px)}
+.modal{background:var(--panel);border-color:var(--field-border);color:var(--text);border-radius:18px}
+.modal h3{color:var(--text)}
+.modal .pathbox,.hash{background:var(--surface-low);border-color:var(--line);color:var(--text)}
+.footer{border-top:1px solid var(--line);padding-top:18px}
+html[data-scheme="light"]{--ui-focus:var(--accent)}
+/* Window/available-content driven composition, including user-resized windows */
+@container scanner-main (max-width:760px) {
+  .resource-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .metrics{gap:8px}
+  .metric{padding:12px}
+  .metric b{font-size:24px}
+  .tools .search{min-width:120px}
+}
+@container scanner-main (max-width:560px) {
+  .metrics{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+  .metric{padding:10px}
+  .metric b{font-size:20px}
+  .resource-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .tools{display:grid;grid-template-columns:minmax(0,1fr) minmax(110px,auto);gap:8px}
+  .tools .search{grid-column:1/-1;min-width:0;width:100%}
+  .tools button{min-width:0}
+  #findingsTab .table-scroll table{display:block;min-width:0;width:100%}
+  #findingsTab .table-scroll thead{display:none}
+  #findingRows{display:grid;gap:10px;padding:10px}
+  #findingRows tr{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;
+    gap:5px 9px;padding:12px;border:1px solid var(--line);
+    border-radius:12px;background:var(--surface-low)}
+  #findingRows td{border:0;padding:2px;min-width:0;white-space:normal}
+  #findingRows td:first-child{grid-column:2;grid-row:1;justify-self:end}
+  #findingRows td:nth-child(2){grid-column:1;grid-row:1 / span 2}
+  #findingRows td:nth-child(3){grid-column:1;grid-row:3}
+  #findingRows td:nth-child(4){grid-column:1;grid-row:4}
+  #findingRows td:nth-child(5){grid-column:2;grid-row:3 / span 2;justify-self:end}
+  .file-name,.file-path{max-width:100%;overflow:hidden;text-overflow:ellipsis}
+  #vaultTab .table-scroll{overflow-x:auto}
+}
+@media(max-width:1120px){
+  .shell{grid-template-columns:minmax(235px,280px) minmax(0,1fr)}
+  .appearance-label{display:none}
+  .wrap{padding-inline:15px}
+}
+@media(max-width:880px){
+  .shell{grid-template-columns:1fr}
+  .shell>aside .panel{position:static;max-height:none;overflow:visible}
+  .top{align-items:flex-start}
+  .top-actions{justify-content:flex-start;width:100%}
+  .shell>main{width:100%}
+  .hero h2{font-size:30px}
+}
+@media(max-width:600px){
+  .wrap{padding:12px 11px 32px}
+  .brand h1{font-size:21px}
+  .top-actions{justify-content:space-between;gap:6px}
+  .top-actions>.tag{display:none}
+  .appearance-control{order:-1;max-width:100%;flex:1;justify-content:space-evenly}
+  .appearance-option{flex:1;justify-content:center;min-width:0}
+  .appearance-option span{font-size:11px}
+  #windowsSecurity,#exit{padding:8px 9px;font-size:11px;min-width:0}
+  #securityHoldBanner{font-size:11px;top:0;margin-bottom:12px}
+  .hero{margin:12px 0 14px}
+  .hero h2{font-size:clamp(23px,6.2vw,29px)}
+  .hero p{font-size:12px}
+  .panel{padding:13px;border-radius:13px}
+  .active-panel{padding:14px}
+  .metric b{font-size:22px}
+  .modalback{padding:9px}
+  .modal{padding:17px;border-radius:12px}
+  .modal .row{align-items:stretch}
+  .modal .row button{flex:1}
+  .toolbar-foot{gap:9px}
+}
+@media(max-width:380px) {
+  .top-actions{justify-content:flex-start}
+  .appearance-control{flex-basis:100%}
+  .metrics .metric{padding:9px 7px}
+  .metric span{font-size:10px}
+  .metric b{font-size:19px}
+  .resource-tile{padding:9px}
+  .resource-tile b{font-size:17px}
+  .tools{grid-template-columns:minmax(0,1fr)}
+  .tools .search{grid-column:auto}
+  .tools select,.tools button{width:100%}
+}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{transition-duration:.001ms!important;animation-duration:.001ms!important;scroll-behavior:auto!important}
+}
+
 </style>
 </head>
 <body>
 <div class="wrap">
- <header class="top"><div class="brand"><div class="mark">◆</div><div><h1>SentinelGuard <span style="font-size:10px;font-weight:600;color:var(--accent);vertical-align:top" id="appVersionBadge">v4.2</span></h1><small>On-demand threat investigation · Windows 10 / 11</small></div></div><div class="top-actions"><span class="tag">● Local-only · No uploads</span><button class="outline" id="windowsSecurity">Open Windows Security</button><button class="outline" id="exit">Exit application</button></div></header>
+ <header class="top"><div class="brand"><div class="mark">◆</div><div><h1>SentinelGuard <span style="font-size:10px;font-weight:600;color:var(--accent);vertical-align:top" id="appVersionBadge">v4.2</span></h1><small>On-demand threat investigation · Windows 10 / 11</small></div></div><div class="top-actions"><span class="tag">● Local-only · No uploads</span>
+   <div class="appearance-control" role="group" aria-label="Appearance">
+    <span class="appearance-label">Appearance</span>
+    <button class="appearance-option" type="button" data-appearance-option="light" aria-pressed="false" title="Use light appearance">☀ <span>Light</span></button>
+    <button class="appearance-option" type="button" data-appearance-option="dark" aria-pressed="false" title="Use dark appearance">☾ <span>Dark</span></button>
+    <button class="appearance-option" type="button" data-appearance-option="system" aria-pressed="false" title="Follow the Windows appearance setting">▣ <span>System</span></button>
+   </div><button class="outline" id="windowsSecurity">Open Windows Security</button><button class="outline" id="exit">Exit application</button></div></header>
  <section class="hero"><span class="eyebrow" id="appEditionHeader">SENTINELGUARD 4.2 · DESKTOP SECURITY CENTER</span><h2>Inspect first. Decide what happens next.</h2><p>One security center for on-demand scanning and optional download protection. Your live shield starts <strong>OFF</strong>. Heuristic findings are evidence for review, not proof of infection. Keep your main antivirus enabled.</p></section>
  <div class="info warn" role="alert" id="securityHoldBanner"><strong>SECURITY HOLD — REVIEW-ONLY CANDIDATE.</strong> The full-scan PowerShell incident is fixed in CI, pending independent Windows field verification. This unsigned build is not approved for ordinary use. Keep Defender enabled.</div>
   <div class="shell">
@@ -131,6 +383,43 @@ button{background:#203149;border:1px solid #39516b;color:#dce7f9;padding:10px 14
 <div class="modalback hide" id="modalBackdrop"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><div class="eyebrow" id="modalBadge">FILE DETAILS</div><h3 id="modalTitle"></h3><div class="muted small" id="modalMeta"></div><div class="pathbox kbd" id="modalPath"></div><h4>Why it was flagged</h4><ul id="modalReasons"></ul><div id="modalHash" class="hash hide"></div><div class="row"><button id="copyPath">Copy path</button><button id="getHash">SHA-256 hash</button><button id="showLocation">Open location</button><button class="primary" id="modalClose">Close</button></div></div></div>
 <script>
 'use strict';
+// Appearance is intentionally independent from scanner state and remains
+// functional even when the local scanner API is unavailable.
+(function initAppearance(){
+  const key='sentinelguard-appearance-v42';
+  const root=document.documentElement;
+  const system=window.matchMedia?window.matchMedia('(prefers-color-scheme: dark)'):null;
+  const allowed=new Set(['light','dark','system']);
+  function selected(){return allowed.has(root.dataset.appearance)?root.dataset.appearance:'system'}
+  function render(){
+    const choice=selected();
+    const scheme=choice==='system'?(system&&system.matches?'dark':'light'):choice;
+    root.dataset.scheme=scheme;
+    root.style.colorScheme=scheme;
+    const meta=document.getElementById('appThemeColor');
+    if(meta)meta.setAttribute('content',scheme==='light'?'#f5f7fa':'#080f19');
+    document.querySelectorAll('[data-appearance-option]').forEach(btn=>{
+      const active=btn.dataset.appearanceOption===choice;
+      btn.setAttribute('aria-pressed',String(active));
+      btn.classList.toggle('selected',active);
+    });
+  }
+  document.querySelectorAll('[data-appearance-option]').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      const choice=btn.dataset.appearanceOption;
+      if(!allowed.has(choice))return;
+      root.dataset.appearance=choice;
+      try{localStorage.setItem(key,choice)}catch(_){}
+      render();
+    });
+  });
+  if(system){
+    if(system.addEventListener)system.addEventListener('change',()=>{if(selected()==='system')render()});
+    else if(system.addListener)system.addListener(()=>{if(selected()==='system')render()});
+  }
+  render();
+})();
+
 const TOKEN=new URLSearchParams(location.search).get('token');
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
