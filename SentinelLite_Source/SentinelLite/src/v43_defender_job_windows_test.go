@@ -54,6 +54,21 @@ func TestSecurityDefenderJobKillOnCloseTerminatesControlledChild(t *testing.T) {
    job.close()
    t.Fatalf("assign inert helper to kill-on-close job: %v",err)
  }
+ // The child must not run while suspended: do not infer process
+ // containment merely from a successful AssignProcessToJobObject.
+ time.Sleep(100*time.Millisecond)
+ if _,err:=os.Stat(ready);err==nil{
+     job.close()
+     _=cmd.Process.Kill()
+     _=cmd.Wait()
+     t.Fatal("Defender helper executed before Job Object containment")
+ }
+ if err:=resumeDefenderProcess(cmd.Process.Pid);err!=nil{
+     job.close()
+     _=cmd.Process.Kill()
+     _=cmd.Wait()
+     t.Fatalf("failed to resume contained helper: %v",err)
+ }
  deadline:=time.Now().Add(5*time.Second)
  for {
     if _,err:=os.Stat(ready);err==nil{break}
