@@ -113,9 +113,9 @@ func (a *App) runDefender(ctx context.Context, mode, custom string) error {
             job.close()
             return fmt.Errorf("could not start Defender helper: %w",err)
         }
-        // Accounting records direct process creations initiated by this app,
-        // not all OS children or service processes. Heuristic scans remain 0.
-        a.recordChildStarted()
+        // Child processes are observed by Toolhelp32, not self-reported here.
+        // The helper is created suspended/assigned to its Job Object before
+        // the primary thread is resumed in the hardened Windows launcher.
         if err:=job.assign(cmd.Process.Pid);err!=nil{
             _ = cmd.Process.Kill()
             _ = cmd.Wait()
