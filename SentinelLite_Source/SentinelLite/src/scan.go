@@ -42,6 +42,16 @@ type SkippedPath struct {
 // explicitly counted in status.skipLogOmitted, not silently discarded.
 const maxSkippedPathRecords = 100000
 
+// ObservedChildProcess is a sampled OS process record, not a claim that the
+// scanner launched it. A PID may be reused and short-lived children can evade polling.
+type ObservedChildProcess struct {
+    PID uint32 `json:"pid"`
+    Image string `json:"image"`
+    FirstSeen time.Time `json:"firstSeen"`
+}
+
+const maxObservedChildren = 128
+
 type Status struct {
 	Active   bool      `json:"active"`
 	Mode     string    `json:"mode"`
@@ -49,7 +59,14 @@ type Status struct {
 	Files    int64     `json:"files"`
 	Skipped  int64     `json:"skipped"`
     Resources ScanResourceUsage `json:"resources"`
-    ChildProcessesStarted int64 `json:"childProcessesStarted"` // direct children created by SentinelGuard, not OS-wide process count
+    ChildProcessesObserved int64 `json:"childProcessesObserved"`
+    ChildProcessImages []string `json:"childProcessImages"`
+    ChildProcessEntries []ObservedChildProcess `json:"childProcessEntries"`
+    ChildProcessOmitted int64 `json:"childProcessOmitted"`
+    ChildProcessSampleCount int64 `json:"childProcessSampleCount"`
+    ChildProcessMonitoringAvailable bool `json:"childProcessMonitoringAvailable"`
+    ChildProcessMonitoringError string `json:"childProcessMonitoringError,omitempty"`
+    ChildProcessWarning string `json:"childProcessWarning,omitempty"`
 	SkipLogOmitted int64 `json:"skipLogOmitted"`
 	Findings int       `json:"findings"`
 	Omitted int64 `json:"omitted"`
@@ -71,6 +88,7 @@ type App struct {
 	skipLogOmitted int64
     resources ScanResourceUsage
     resourceDone chan struct{}
+    childSeen map[uint32]ObservedChildProcess
     lastResourceCPU float64
     lastResourceAt time.Time
     sumCPUPercent float64
@@ -114,6 +132,8 @@ func (a *App) snapshot() (Status, []Finding) {
 	s.Omitted = atomic.LoadInt64(&a.omitted)
 	s.SkipLogOmitted = a.skipLogOmitted
     s.Resources = a.resources
+    s.ChildProcessImages = append([]string(nil),s.ChildProcessImages...)
+    s.ChildProcessEntries = append([]ObservedChildProcess(nil),s.ChildProcessEntries...)
 	fs := make([]Finding, 0, len(a.order))
 	for _, id := range a.order {
 		fs = append(fs, a.findings[id])
@@ -163,11 +183,8 @@ func (a *App) stop() {
 		c()
 	}
 }
-func (a *App) recordChildStarted() {
-    a.mu.Lock()
-    a.status.ChildProcessesStarted++
-    a.mu.Unlock()
-}
+// Child-process accounting is exclusively OS-observed, not manually
+// incremented by Defender or Scan & Run code paths.
 func (a *App) incrFiles()          { atomic.AddInt64(&a.files, 1) }
 // Record skipped paths and reasons for the JSON report. The count is always
 // complete even if an extreme number of records exhaust the safety cap.
