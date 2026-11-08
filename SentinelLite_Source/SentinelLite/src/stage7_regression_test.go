@@ -80,6 +80,6 @@ func TestStage7UIBrandVersion(t *testing.T) {
 	b,err:=pages.ReadFile("ui.html");if err!=nil{t.Fatal(err)}
 	s:=string(b)
 	// Product-version assertion updated from 4.1 to 4.2; brand and old-name regression locks remain intact.
-	if !strings.Contains(s,"SentinelGuard") || !strings.Contains(s,"SentinelGuard 4.2"){t.Fatal("UI is missing SentinelGuard 4.2 branding")}
+	if appEdition!="SentinelGuard 4.2" || !strings.Contains(s,"SentinelGuard") || !strings.Contains(s,"SENTINELGUARD 4.2") || !strings.Contains(s,"appEditionHeader") {t.Fatal("UI does not render the current centralized 4.2 branding")}
 	if strings.Contains(s,"SentinelLite"){t.Fatal("old product name remains in the rendered interface")}
 }
