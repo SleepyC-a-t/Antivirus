@@ -22,6 +22,10 @@ func TestSafetyDefenderCommandNeverCreatesConsole(t *testing.T) {
     if cmd.SysProcAttr.CreationFlags&createNoWindow==0{
         t.Fatal("Defender command lacks CREATE_NO_WINDOW flag")
     }
+    const createSuspended=0x00000004
+    if cmd.SysProcAttr.CreationFlags&createSuspended==0{
+        t.Fatal("Defender helper must start suspended before Job Object assignment")
+    }
 }
 
 // Native WinVerifyTrust inspection must not attempt a PowerShell-based
