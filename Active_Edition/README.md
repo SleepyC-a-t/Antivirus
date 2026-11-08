@@ -128,3 +128,19 @@ dedicated log is bounded and discloses omitted record counts.
 
 **Keep your existing antivirus on. Never override your antivirus's quarantine
 or security warnings just to test SentinelGuard.**
+
+
+## Security incident review status, 2026-11-08
+The historical 4.2 PowerShell child-process regression is **fixed in CI,
+pending independent Windows field verification**. The built-in scan tripwire
+now takes actual Windows Toolhelp32 snapshots (approximately every 250ms
+and at scan completion) and records observed direct children by PID and image.
+Sampling misses sufficiently brief children; zero observed is not proof that
+none started. An observed child during heuristic mode is an incident warning.
+The UI keeps a visible SECURITY HOLD banner until field verification.
+
+The signature check is **embedded Authenticode only**. A catalog-signed
+legitimate file may display **Not verified**; this does not mean it is
+suspicious. Publisher name extraction remains deferred pending review.
+Windows Sandbox and Process Monitor instructions are in `docs/`.
+The EXE is still unsigned; the real-world malicious detection rate is unknown.
