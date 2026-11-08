@@ -1,0 +1,16 @@
+<Configuration>
+  <!-- Review-only Windows Sandbox. Create C:\SentinelGuardReview on the host
+       and place ONLY reviewed unsigned test artifacts and benign fixtures
+       there. Do not execute the revoked historical build outside an
+       independently managed isolated lab. -->
+  <Networking>Disable</Networking>
+  <vGPU>Disable</vGPU>
+  <ClipboardRedirection>Disable</ClipboardRedirection>
+  <MappedFolders>
+    <MappedFolder>
+      <HostFolder>C:\SentinelGuardReview</HostFolder>
+      <SandboxFolder>C:\Users\WDAGUtilityAccount\Desktop\SentinelGuardReview</SandboxFolder>
+      <ReadOnly>true</ReadOnly>
+    </MappedFolder>
+  </MappedFolders>
+</Configuration>
