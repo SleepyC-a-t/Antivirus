@@ -10,3 +10,13 @@
 - [ ] **Privacy export:** export both full and redacted JSON and inspect manually for your username, paths, private file names, timestamps, identifiers and hashes before sharing.
 
 Log observed versus expected outcomes (PASS / FAIL / NOT TESTED), screenshots with private data removed, startup errors, and browser extension versions. **This checklist has not been run interactively by CI.**
+
+
+## Additional 4.2 security-retest steps (independent Sandbox operator only)
+- [ ] **Open location:** with a known inert file in the read-only mapped fixture folder, click Open location and verify that Explorer opens the containing directory and selects the expected file, with no command prompt or PowerShell child.
+- [ ] **Open Windows Security:** click once and verify correct Windows Security page, no unexpected command interpreter process, no elevation prompt from SentinelGuard, and no external URL navigation. Record success or failure if Windows Sandbox does not provide that system UI.
+- [ ] **Toolhelp child tripwire:** inspect the OS-observed count, child image names and PID list while a benign heuristic scan runs and at completion. Expected zero. Check `childProcessSampleCount` increases; unknown/failed monitoring must not appear as zero/clean. Compare to Process Monitor because 250-ms snapshots can miss short-lived children.
+- [ ] **Signature wording:** inspect a legitimate Windows catalog-signed file such as notepad.exe. 'Not verified' must be described as missing embedded/catalog verification, not as evidence of malware.
+- [ ] **Sandbox and filtering:** open `docs/SentinelGuard-Safety-Review.wsb` (create the mapped source folder first), follow `docs/SentinelGuard-Procmon-Filters.txt` to save the native Procmon filter and preserve raw unfiltered PML.
+- [ ] **Cancelled scan:** start then cancel a full heuristic scan of benign fixtures, checking whether unexpected child processes appear and whether CPU/memory/tripwire and Stop state settle.
+**Reminder:** No test on the affected personal machine while the SECURITY HOLD remains active. The Windows Sandbox configuration and Procmon guide are for an independent tester; success on them still does not establish 100% safety.
