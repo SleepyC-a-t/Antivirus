@@ -157,3 +157,72 @@ records `v42VerifySignature` invocation counts, and requests
 that ETW captured command lines or a parent-child tree unless the actual
 resulting event payload contains those fields. A CI headless startup test is
 not equivalent to interactive console-window observation.
+
+
+## 2026-11-08 — Claude review follow-up and verified forensic corrections
+
+**Fixed in CI, pending independent Windows field verification.** Claude's
+independent review of the previous 4.2 candidate accepted the specific
+PowerShell regression fix and independently verified 8 old versus 0 patched
+`powershell.exe` children in the same scanner survey. A controlled retest
+was not blocked by that issue, but the SECURITY HOLD banner remains until
+the user-controlled and independent Windows Sandbox field-test gates are met.
+
+**Exactly what ran:** the ETW comparison executed a **Go test binary**
+containing the real SentinelGuard scanner and the same real benign-file
+inspection functions, **not the desktop GUI executable**. The GitHub workflow
+built both historical and patched desktop EXEs for byte-level inspection and
+recorded their SHA-256 hashes; it did not execute those desktop EXEs during
+the ETW survey. A separate Windows CI smoke test launched the patched GUI
+backend headlessly.
+
+The patched build embedded inside the old 4.2 review ZIP has
+SHA-256 `a4bfbfa60d3349d8420b837cc07fd7244f64c9f51454a756cb1de520c5e42842`.
+The patched desktop EXE built in the exact matching ETW comparison has
+**the same SHA-256**, not a different one. A previous handoff report
+incorrectly claimed a hash mismatch; it is corrected here.
+The revoked historical desktop EXE SHA-256 in that ETW run was
+`74ee732e8108c3c83bdb869916291f0ca2981e8164ec3e96e2c3bf8c0c047bf8`.
+These are specific historical artifact hashes, not hashes of future builds.
+
+**Performance (same selected CI survey):** the historical Go scanner test
+took **111.43 seconds** and the patched scanner test **12.99 seconds**.
+Each inspected 7,787 expected-benign files and invoked the signature
+verification path 8 times during the survey. These timings are CI-specific,
+not general full-drive performance benchmarks or a guarantee of future speed.
+
+**Observed process tripwire:** The new `status.childProcessesObserved`
+and `childProcessEntries` are sampled with the native Windows Toolhelp32
+API at scan start, 250-ms intervals and scan completion; results contain
+direct child PIDs, executable base names and first-seen timestamps. Any
+observed child during heuristic mode produces an explicit warning.
+Because snapshots are not continuous ETW, a child that starts and exits
+between samples may be missed. `childProcessMonitoringError` reports
+sampling failures. It does NOT replace forensic ETW or Sysmon.
+
+**Signature interpretation:** `Not verified` is neutral/unverified, not
+proof of malware. The offline native checker handles embedded signatures
+only and does not resolve all catalog-signed files; Windows notepad.exe
+can report not verified even when legitimate. Trust verification is a
+supplementary static signal, never a guarantee that a file is safe.
+
+**Defender Job Object:** Explicit experimental Defender scanning remains
+OFF by default. The helper now starts in CREATE_SUSPENDED state, is
+assigned to a kill-on-close Windows Job Object, and is only resumed after
+successful assignment. A Win32 Toolhelp thread snapshot is used to locate
+its suspended thread. The external Defender service can still continue
+independently; no antivirus cancellation guarantee applies to that service.
+
+**Controlled tester resources:** `docs/SentinelGuard-Safety-Review.wsb`
+provides networking-disabled Windows Sandbox configuration with a
+read-only host folder mapping (create `C:\SentinelGuardReview` first).
+`docs/SentinelGuard-Procmon-Filters.txt` provides explicit manual Process
+Monitor filter rules, process-tree checks and evidence-preservation steps.
+It is not a native .PMC file and must not be described as one.
+
+**Independent field verification and release blockers:** visual GUI
+button behavior (Open location and Windows Security), a complete and
+cancelled full-drive run in an independently controlled sandbox, no
+signing certificate, no independently labeled real-malware sensitivity,
+and a final reviewer sign-off remain outstanding.
+
