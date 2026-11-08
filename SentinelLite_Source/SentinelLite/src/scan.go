@@ -188,6 +188,11 @@ func (a *App) skippedSnapshot() []SkippedPath {
 }
 func (a *App) setCurrent(p string) { a.mu.Lock(); a.status.Current = p; a.mu.Unlock() }
 
+// The normal value enumerates all fixed and removable drives. Tests can
+// temporarily substitute an isolated inert fixture tree to exercise the
+// EXACT full-scan dispatch without touching a physical machine's drives.
+var fullScanDriveRoots = fixedAndRemovableDrives
+
 func scanRoots(mode, custom string) ([]string, error) {
 	if mode == "custom" {
 		if strings.TrimSpace(custom) == "" {
@@ -203,7 +208,7 @@ func scanRoots(mode, custom string) ([]string, error) {
 		return []string{p}, nil
 	}
 	if mode == "full" {
-		roots := fixedAndRemovableDrives()
+		roots := fullScanDriveRoots()
 		if len(roots) == 0 {
 			return nil, errors.New("no local drives found")
 		}
