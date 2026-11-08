@@ -58,6 +58,7 @@ func sampleDirectChildProcesses() ([]ObservedChildProcess, bool, error) {
         if entry.ParentProcessID == parentID && entry.ProcessID != parentID {
             out = append(out, ObservedChildProcess{
                 PID: entry.ProcessID,
+                ParentPID: parentID,
                 Image: syscall.UTF16ToString(entry.ExeFile[:]),
                 FirstSeen: captured,
             })
