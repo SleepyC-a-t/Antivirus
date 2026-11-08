@@ -141,7 +141,7 @@ summary:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
 .shell{display:grid;grid-template-columns:minmax(252px,320px) minmax(0,1fr);gap:clamp(11px,1.45vw,22px);align-items:start}
 .shell>aside,.shell>main,.shell>main>*{min-width:0}
 .shell>main{container-type:inline-size;container-name:scanner-main}
-.shell>aside .panel{position:sticky;top:12px;max-height:calc(100dvh - 24px);overflow-y:auto;scrollbar-width:thin}
+.shell>aside .panel{position:static;max-height:none;overflow:visible;scrollbar-width:thin}
 .panel,.metric,.resource-tile{
  border-color:var(--line);background:var(--panel);color:var(--text);box-shadow:var(--soft-shadow)}
 .panel{padding:clamp(14px,1.5vw,22px);border-radius:var(--radius)}
