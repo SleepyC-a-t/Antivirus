@@ -47,8 +47,8 @@ jobs:
           if(/pairing must be renewed after restarting/i.test(readme))
             throw Error('Contradictory pairing persistence instructions');
           const go = fs.readFileSync('SentinelLite_Source/SentinelLite/src/main.go', 'utf8');
-          if(!go.includes('"version":"4.2"'))
-            throw Error('Runtime product version mismatches 4.2');
+          if(!go.includes('const appVersion = "4.2"') || !go.includes('const appEdition = "SentinelGuard " + appVersion'))
+            throw Error('Runtime app edition/version constants mismatched 4.2');
           JS
       - name: JavaScript syntax checks
         run: |
