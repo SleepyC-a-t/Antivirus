@@ -7,6 +7,7 @@ import (
  "os"
  "path/filepath"
  "strings"
+ "sync/atomic"
  "testing"
 )
 
@@ -53,9 +54,9 @@ func TestSecurityRealScanPipelineReachesTripleImportSignatureHook(t *testing.T){
  fullScanDriveRoots=func()[]string{return []string{dir}}
  defer func(){fullScanDriveRoots=savedRoots}()
  saved:=verifyPESignature
- calls:=0
+ var calls atomic.Int64
  verifyPESignature=func(path string)(string,string){
-    calls++
+    calls.Add(1)
     if path!=pe&&path!=corroborated {t.Errorf("unexpected signature path %q",path)}
     return "Not verified (synthetic fixture)", "Unverified"
  }
@@ -67,7 +68,7 @@ func TestSecurityRealScanPipelineReachesTripleImportSignatureHook(t *testing.T){
  if err!=nil{t.Fatal(err)}
  st,findings:=app.snapshot()
  if st.Files!=3{t.Fatalf("scan worker skipped or executed a sample: %+v",st)}
- if calls!=2{t.Fatalf("real file walker and PE analyzer must call native trust for both import sets: %d",calls)}
+ if calls.Load()!=2{t.Fatalf("real file walker and PE analyzer must call native trust for both import sets: %d",calls.Load())}
  if len(findings)==0{t.Fatal("expected static PE indicators not reported")}
  foundCorroborated:=false
  foundAdvisory:=false
