@@ -18,7 +18,7 @@ func openDesktop(localURL string) error {
         Debug:false,
         AutoFocus:true,
         WindowOptions:webview2.WindowOptions{
-            Title:"SentinelGuard 4.1 — Security Center",
+            Title:appEdition+" — Security Center",
             Width:1440,
             Height:930,
             Center:true,
