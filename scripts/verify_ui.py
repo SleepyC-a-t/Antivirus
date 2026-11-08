@@ -78,7 +78,7 @@ def main():
     try:
         with sync_playwright() as p:
             browser=p.chromium.launch(headless=True)
-            for width,height in [(360,740),(768,900),(1024,768),(1440,900)]:
+            for width,height in [(360,740),(768,900),(1024,480),(1024,768),(1440,900)]:
                 context=browser.new_context(viewport={"width":width,"height":height},color_scheme="dark",
                                             reduced_motion="reduce")
                 page=context.new_page()
@@ -105,7 +105,7 @@ def main():
                 assert_equal(page.locator('[data-appearance-option="system"]').get_attribute("aria-pressed"),
                              "true","System mode initial selection")
                 if errors: raise AssertionError(f"Browser script errors at {width}px: {errors}")
-                page.screenshot(path=str(OUTPUT/f"sentinelguard-{width}-dark.png"),full_page=True)
+                page.screenshot(path=str(OUTPUT/f"sentinelguard-{width}x{height}-dark.png"),full_page=True)
                 page.get_by_role("button",name="Light").click()
                 assert_equal(page.locator("html").get_attribute("data-scheme"),"light","Light override")
                 context2=page.context
@@ -113,7 +113,7 @@ def main():
                 assert_equal(page.locator("html").get_attribute("data-scheme"),"light","Manual light persists on dark OS")
                 page.reload(wait_until="domcontentloaded")
                 assert_equal(page.locator("html").get_attribute("data-appearance"),"light","Theme storage survives reload")
-                page.screenshot(path=str(OUTPUT/f"sentinelguard-{width}-light.png"),full_page=True)
+                page.screenshot(path=str(OUTPUT/f"sentinelguard-{width}x{height}-light.png"),full_page=True)
                 page.get_by_role("button",name="System").click()
                 page.emulate_media(color_scheme="light")
                 page.wait_for_function("document.documentElement.dataset.scheme === 'light'",timeout=2500)
@@ -121,7 +121,18 @@ def main():
                 page.wait_for_function("document.documentElement.dataset.scheme === 'dark'",timeout=2500)
                 page.get_by_role("button",name="Dark").click()
                 assert_equal(page.locator("html").get_attribute("data-scheme"),"dark","Manual dark override")
-                print(f"PASS {width}x{height}: overflow, theme modes, storage, live system changes, safety banner, JS")
+                # Resize the SAME live document without reloading. The
+                # actual WebView window width, not monitor resolution, must
+                # drive layout changes.
+                page.set_viewport_size({"width":360,"height":520})
+                page.wait_for_timeout(80)
+                overflow=page.evaluate("Math.max(document.documentElement.scrollWidth,document.body.scrollWidth)-window.innerWidth")
+                if overflow>2: raise AssertionError(f"Overflow after live resize: {overflow}px")
+                page.locator("#scan").scroll_into_view_if_needed()
+                if not page.locator("#scan").is_visible():
+                    raise AssertionError("Scan controls became inaccessible in narrow/short window")
+                page.set_viewport_size({"width":width,"height":height})
+                print(f"PASS {width}x{height}: overflow, live window resize, theme persistence/system, security hold and JS")
                 context.close()
             browser.close()
     finally:
