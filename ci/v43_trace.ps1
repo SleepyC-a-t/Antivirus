@@ -25,6 +25,22 @@ foreach ($pair in @(@('old',$Baseline),@('patched',$Patched))) {
  [IO.File]::WriteAllText($metadata,$raw)
 }
 
+# Best-effort Security Event 4688 command-line capture on the ephemeral CI VM.
+# Audit policy is only changed on the disposable runner and is never needed
+# for the main ETW evidence. Failure to enable must be reported, not hidden.
+$securityCaptureEnabled=$false
+$securityCaptureNote="Windows Security 4688 command-line audit unavailable"
+try {
+  & auditpol /set /subcategory:"Process Creation" /success:enable 2>&1 | Out-Null
+  if($LASTEXITCODE -ne 0){throw "auditpol not permitted"}
+  $auditKey="HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\Audit"
+  New-Item -Path $auditKey -Force | Out-Null
+  New-ItemProperty -Path $auditKey -Name "ProcessCreationIncludeCmdLine_Enabled" -PropertyType DWord -Value 1 -Force | Out-Null
+  $securityCaptureEnabled=$true
+  $securityCaptureNote="Enabled Security 4688 process creation + command lines on disposable runner"
+} catch { $securityCaptureNote="Security 4688 could not be enabled: $($_.Exception.Message)" }
+Write-Host "4688_AUDIT $securityCaptureNote"
+
 function Get-EventPayload([xml]$xml) {
  $map=@{}
  foreach($d in @($xml.Event.EventData.Data)) {
@@ -55,10 +71,11 @@ foreach ($pair in @(@('old',$Baseline),@('patched',$Patched))) {
      $env:SENTINELGUARD_PYTHON_ROOT=(python -c "import sys;print(sys.prefix)")
      $env:SENTINELGUARD_NPM_ROOT=(npm root -g)
      $env:SG_FOR_FORENSIC='1'
+     $traceStart=Get-Date
      & go test -count=1 -v -run '^TestForensicFullInspectionReadOnly$' . *>&1 |
        Tee-Object -FilePath (Join-Path $outputFolder 'go-test.log')
      if($LASTEXITCODE -ne 0){throw "$tag forensic scan failed"}
-   } finally {Pop-Location}
+   } finally { $traceStop=Get-Date; Pop-Location }
  } finally {
    if($enabled){& logman stop $session}
    & logman delete $session
@@ -115,8 +132,36 @@ foreach ($pair in @(@('old',$Baseline),@('patched',$Patched))) {
    signatureCallsFromDirectControl=if($control.Success){[int]$control.Groups[2].Value}else{$null};
    recordedETWEvents=$parsed.Count;spawnedImages=$counts;
    commandsMayBeUnavailable=$true;etwPath=$etl;csvPath=$csv;
+   security4688Enabled=$securityCaptureEnabled;security4688Note=$securityCaptureNote;
    noClaimsIfProviderUnavailable='Raw ETW evidence must be interpreted independently'
  }
+ # Windows Security 4688 is a separate command-line auditing source. Restrict
+ # the emitted records to direct child events of the scanner test PID and
+ # to the same wall-clock capture interval; never export all Security events.
+ $securityChildren=@()
+ if($securityCaptureEnabled -and $traceStart -and $traceStop){
+   try {
+     $events4688=@(Get-WinEvent -FilterHashtable @{LogName='Security';Id=4688;StartTime=$traceStart;EndTime=$traceStop} -ErrorAction Stop)
+     foreach($evt in $events4688){
+       $data=Get-EventPayload ([xml]$evt.ToXml())
+       $parent=($data['ProcessId'],$data['CreatorProcessId']|Where-Object{$_}|Select-Object -First 1)
+       if(!$parent){continue}
+       try{$parentPID=if($parent -match '^0x') {[Convert]::ToInt64($parent.Substring(2),16)}else{[int64]$parent}}catch{continue}
+       if($parentPID -ne $summary.testProcessPID){continue}
+       $securityChildren+= [ordered]@{
+         time=$evt.TimeCreated.ToString('o');parentPID=$parentPID;
+         newProcessName=$data['NewProcessName'];newProcessID=$data['NewProcessId'];
+         commandLine=$data['CommandLine'];source='Windows Security 4688'
+       }
+       if($securityChildren.Count -ge 64){break}
+     }
+     $summary.security4688Records=$securityChildren.Count
+     $summary.security4688CommandLines=$(@($securityChildren|Where-Object{$_['commandLine']}).Count)
+   }catch{
+     $summary.security4688Note="Security Event 4688 query failed: $($_.Exception.Message)"
+   }
+ }
+ $securityChildren|ConvertTo-Json -Depth 6| Set-Content -Encoding UTF8 (Join-Path $outputFolder 'security4688-scanner-children.json')
  $summary|ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 (Join-Path $outputFolder 'summary.json')
  Write-Host "FORENSIC_RESULT $($summary|ConvertTo-Json -Compress -Depth 8)"
 }
