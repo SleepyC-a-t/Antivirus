@@ -153,7 +153,7 @@ function renderResources(){
  metric('memoryCurrent',has&&r.samples?r.currentMemoryMiB:null,' MiB');
  metric('memoryAverage',has&&r.samples?r.averageMemoryMiB:null,' MiB');
  metric('memoryPeak',has&&r.samples?r.peakMemoryMiB:null,' MiB');
- $('childProcessesObserved').textContent=state.status.childProcessMonitoringAvailable?fmt(state.status.childProcessesObserved||0):'—';
+ $('childProcessesObserved').textContent=state.status.childProcessMonitoringAvailable&&!state.status.childProcessMonitoringError?fmt(state.status.childProcessesObserved||0):'Unknown';
  const images=state.status.childProcessImages||[];
  $('childProcessImages').textContent=images.length?'Observed images: '+images.join(', '):'No direct child processes seen in samples.';
  $('resourceState').textContent=state.connectionLosses>=3?'Disconnected — last known readings':(!has?'No scan yet':(state.status.active?'Live · '+fmt(r.samples||0)+' samples':'Completed · '+fmt(r.samples||0)+' samples'));
@@ -169,8 +169,8 @@ function renderStatus(){
  $('browseFolder').disabled=!!s.active||state.starting||disconnected;
  $('cancel').classList.toggle('hide',!s.active||disconnected);
  $('current').textContent=s.current|| (s.active?'Initializing scanner…':'No scan in progress.');
- $('childProcessAlert').classList.toggle('hide',!s.childProcessWarning);
-  $('childProcessAlert').textContent=s.childProcessWarning||'';
+ $('childProcessAlert').classList.toggle('hide',!s.childProcessWarning&&!s.childProcessMonitoringError);
+  $('childProcessAlert').textContent=[s.childProcessWarning,s.childProcessMonitoringError?'Process observation error: '+s.childProcessMonitoringError:''].filter(Boolean).join(' | ');
   let warning=[s.error,s.omitted?`${fmt(s.omitted)} suspicious findings omitted at the 3,000-result limit; results incomplete.`:'',disconnected?'Local scanner unavailable. Values shown are stale. If the executable stopped, inspect the app-data SentinelGuard diagnostics log (Logs folder) for diagnostics.':''].filter(Boolean).join(' | ');
  $('error').classList.toggle('hide',!warning);$('error').textContent=warning;
  $('elapsed').textContent=s.started?((Date.now()-Date.parse(s.started))/1000/60).toFixed(1)+' min since start':'Idle';
