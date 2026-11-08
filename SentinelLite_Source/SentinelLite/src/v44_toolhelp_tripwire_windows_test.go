@@ -43,6 +43,7 @@ func TestSecurityToolhelpTripwireObservesHarmlessChild(t *testing.T) {
         st,_:=a.snapshot()
         for _,child:=range st.ChildProcessEntries{
             if child.PID==uint32(cmd.Process.Pid) {
+                if child.ParentPID!=uint32(os.Getpid()){t.Fatalf("Toolhelp parent process mismatch: %d",child.ParentPID)}
                 matched=true
                 if !strings.EqualFold(child.Image,filepath.Base(os.Args[0])) {
                     t.Fatalf("process image mismatch: %q",child.Image)
