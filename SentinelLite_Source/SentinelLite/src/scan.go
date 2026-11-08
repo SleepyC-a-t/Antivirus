@@ -46,6 +46,7 @@ const maxSkippedPathRecords = 100000
 // scanner launched it. A PID may be reused and short-lived children can evade polling.
 type ObservedChildProcess struct {
     PID uint32 `json:"pid"`
+    ParentPID uint32 `json:"parentPid"`
     Image string `json:"image"`
     FirstSeen time.Time `json:"firstSeen"`
 }
