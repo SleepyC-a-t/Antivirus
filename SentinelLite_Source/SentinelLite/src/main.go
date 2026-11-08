@@ -27,7 +27,9 @@ var pages embed.FS
 
 // Built separately with -ldflags '-X main.edition=active'. The standard
 // SentinelGuard executable retains its existing on-demand behavior.
-var edition = "integrated" // v4.2 combines manual and opt-in live scanning
+const appVersion = "4.2"
+const appEdition = "SentinelGuard " + appVersion
+var edition = "integrated" // unified manual + opt-in live scanning
 
 type Server struct {
     active *ActiveMonitor
@@ -50,7 +52,7 @@ func (s *Server) browserChallengeMAC(nonce string,enabled bool) string {
     raw,err:=base64.RawURLEncoding.DecodeString(key)
     if err!=nil||len(raw)!=32{return ""}
     mac:=hmac.New(sha256.New,raw)
-    mac.Write([]byte("SG4.2|"+nonce+"|"+strconv.FormatBool(enabled)+"|SentinelGuard 4.2"))
+    mac.Write([]byte("SG"+appVersion+"|"+nonce+"|"+strconv.FormatBool(enabled)+"|"+appEdition))
     return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 }
 func (s *Server) pairSnapshot()(string,bool) {
@@ -158,7 +160,7 @@ func (s *Server) routes() http.Handler {
 	})
 	mux.HandleFunc("/api/snapshot", func(w http.ResponseWriter, r *http.Request) {
 		status, fs := s.app.snapshot()
-		sendJSON(w, map[string]any{"status": status, "findings": fs, "product": map[string]any{"name":"SentinelGuard","version":"4.2", "type":"manual and optional live-protection scanner","activeEdition":s.active!=nil,"desktop":true}})
+		sendJSON(w, map[string]any{"status": status, "findings": fs, "product": map[string]any{"name":"SentinelGuard","edition":appEdition,"version":appVersion, "type":"manual and optional live-protection scanner","activeEdition":s.active!=nil,"desktop":true}})
 	})
 	mux.HandleFunc("/api/choose-folder", func(w http.ResponseWriter, r *http.Request) {
         if !requirePost(w, r) { return }
@@ -421,7 +423,7 @@ func (s *Server) routes() http.Handler {
 		skippedPaths := s.app.skippedSnapshot()
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Content-Disposition", `attachment; filename="SentinelGuard_v4.2_Report.json"`)
-		report:=map[string]any{"product": "SentinelGuard", "version": "4.2", "exportedAt": time.Now(), "status": st, "findings": fs, "skippedPaths": skippedPaths, "notice": "These findings may be false positives. Defender scans are separate from heuristic scans."}
+		report:=map[string]any{"product": "SentinelGuard", "version": appVersion, "exportedAt": time.Now(), "status": st, "findings": fs, "skippedPaths": skippedPaths, "notice": "These findings may be false positives. Defender scans are separate from heuristic scans."}
         if s.active!=nil {report["liveProtection"]=s.active.snapshot()}
         if r.URL.Query().Get("redact")=="1"{
             masked,err:=v42RedactReport(report)
