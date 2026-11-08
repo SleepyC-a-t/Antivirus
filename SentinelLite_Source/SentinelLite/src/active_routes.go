@@ -31,7 +31,7 @@ func registerActiveRoutes(mux *http.ServeMux,s *Server){
         snap:=s.active.snapshot()
         mac:=s.browserChallengeMAC(nonce,snap.Enabled)
         if mac==""{apiError(w,503,fmt.Errorf("browser credential unavailable"));return}
-        sendJSON(w,map[string]any{"enabled":snap.Enabled,"edition":"SentinelGuard 4.2","nonce":nonce,"mac":mac})
+        sendJSON(w,map[string]any{"enabled":snap.Enabled,"edition":appEdition,"nonce":nonce,"mac":mac})
     })
     mux.HandleFunc("/api/active/toggle",func(w http.ResponseWriter,r *http.Request){
         if !requirePost(w,r){return}
@@ -76,7 +76,7 @@ func registerActiveRoutes(mux *http.ServeMux,s *Server){
     mux.HandleFunc("/api/active/report",func(w http.ResponseWriter,r *http.Request){
         if r.Method!=http.MethodGet{http.Error(w,"GET required",405);return}
         w.Header().Set("Content-Disposition",`attachment; filename="SentinelGuard_v4.2_Live_Report.json"`)
-        report:=map[string]any{"product":"SentinelGuard 4.2","version":"4.2","exportedAt":time.Now(),"status":s.active.snapshot(),"privacy":"Contains absolute file paths, scan detection reasons and local timestamps. No internet history, passwords, cookies or uploaded file contents."}
+        report:=map[string]any{"product":appEdition,"version":appVersion,"exportedAt":time.Now(),"status":s.active.snapshot(),"privacy":"Contains absolute file paths, scan detection reasons and local timestamps. No internet history, passwords, cookies or uploaded file contents."}
         if r.URL.Query().Get("redact")=="1"{
             masked,err:=v42RedactReport(report)
             if err!=nil{apiError(w,500,err);return}
