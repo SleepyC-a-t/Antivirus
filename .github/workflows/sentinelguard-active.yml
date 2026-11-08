@@ -50,6 +50,19 @@ jobs:
           if(!go.includes('const appVersion = "4.2"') || !go.includes('const appEdition = "SentinelGuard " + appVersion'))
             throw Error('Runtime app edition/version constants mismatched 4.2');
           JS
+      - name: Validate embedded desktop UI JavaScript and safety indicators
+        run: |
+          node - <<'JS'
+          const fs=require('node:fs'),vm=require('node:vm');
+          const ui=fs.readFileSync('SentinelLite_Source/SentinelLite/src/ui.html','utf8');
+          const scripts=[...ui.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/gi)];
+          if(scripts.length!==1) throw Error('Expected one embedded desktop script, got '+scripts.length);
+          new vm.Script(scripts[0][1],{filename:'ui.html'});
+          for(const required of ['securityHoldBanner','childProcessesObserved','childProcessImages','childProcessAlert','appEditionHeader','appVersionBadge']){
+            if(!ui.includes('id="'+required+'"'))throw Error('Required UI field missing: '+required);
+          }
+          if(/SentinelGuard 4\.(?!2\b)\d+/i.test(ui))throw Error('Stale SentinelGuard 4.x UI edition');
+          JS
       - name: JavaScript syntax checks
         run: |
           node --check Active_Edition/browser-extension/background.js
