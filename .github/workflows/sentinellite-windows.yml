@@ -49,6 +49,130 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Go dependency verification failed' }
       - name: Static analysis
         run: go vet ./...
+      - name: Early security-gate smoke tests (before full benign survey)
+        run: |
+          go test -count=1 -v -run '^(TestSecurityDefenderJobKillOnCloseTerminatesControlledChild|TestSecurityRealScanPipelineReachesTripleImportSignatureHook|TestSafetyNativeSignatureProbeDoesNotUseInterpreter|TestSecurityProcessCreationFunctionAllowlistAndReachability)
+        run: go test -count=1 -v ./...
+      - name: Build desktop Windows executable
+        run: |
+          $exe = Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.2.exe'
+          go build -trimpath -ldflags '-s -w -H windowsgui' -o $exe .
+          if ($LASTEXITCODE -ne 0 -or !(Test-Path $exe)) { throw 'Windows desktop build failed' }
+          Get-FileHash -Algorithm SHA256 $exe | Format-List
+      - name: Assert compiled executable does not contain legacy PowerShell publisher command
+        run: |
+          $exe = Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.2.exe'
+          $bytes = [System.IO.File]::ReadAllBytes($exe)
+          $text = [System.Text.Encoding]::ASCII.GetString($bytes)
+          if ($text.Contains('Get-AuthenticodeSignature')) {
+            throw 'Security regression: old PowerShell publisher-inspection command found in compiled executable'
+          }
+          Write-Host 'PASS: compiled Windows executable has no legacy PowerShell publisher command'
+      - name: Headless Windows startup smoke test
+        run: |
+          $exe = Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.2.exe'
+          $env:SENTINELGUARD_TEST_NO_GUI='1'
+          $app=Start-Process -FilePath $exe -WorkingDirectory $env:RUNNER_TEMP -PassThru
+          try {
+            $ready=$false
+            for ($i=0;$i -lt 25;$i++){
+              Start-Sleep -Seconds 1
+              $app.Refresh()
+              if ($app.HasExited){throw 'SentinelGuard desktop backend exited unexpectedly'}
+              $listener=Get-NetTCPConnection -State Listen -OwningProcess $app.Id -ErrorAction SilentlyContinue |
+                Where-Object {$_.LocalAddress -eq '127.0.0.1'} | Select-Object -First 1
+              if ($listener){
+                $url="http://127.0.0.1:$($listener.LocalPort)/api/active/status"
+                $response=Invoke-WebRequest -Uri $url -SkipHttpErrorCheck -TimeoutSec 5
+                if ($response.StatusCode -ne 403){throw "Untrusted caller received HTTP $($response.StatusCode)"}
+                Write-Host 'PASS: desktop backend started with local authentication and active protection OFF by default'
+                $ready=$true
+                break
+              }
+            }
+            if (-not $ready){throw 'No localhost listener was created'}
+          } finally {
+            Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
+            Remove-Item Env:SENTINELGUARD_TEST_NO_GUI -ErrorAction SilentlyContinue
+          }
+      - name: Verify browser companion JavaScript and manifests
+        shell: pwsh
+        working-directory: Active_Edition/browser-extension
+        run: |
+          node -e "const fs=require('fs');const m=JSON.parse(fs.readFileSync('manifest.json','utf8'));if(m.manifest_version!==3||!m.permissions.includes('declarativeNetRequest'))process.exit(1);"
+          node --check background.js
+          node --check popup.js
+          node --check ../browser-extension-firefox/background.js
+          node --check ../browser-extension-firefox/popup.js
+          node browser_rules.test.cjs
+          node -e "const fs=require('fs');const a=JSON.parse(fs.readFileSync('manifest.json','utf8'));const b=JSON.parse(fs.readFileSync('../browser-extension-firefox/manifest.json','utf8'));if(!a.background.service_worker||a.background.scripts||!b.background.scripts||b.background.service_worker)process.exit(1)"
+      - name: Assemble v4.2 release folder
+        shell: pwsh
+        working-directory: .
+        run: |
+          $package=Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.2'
+          New-Item -ItemType Directory -Force -Path $package | Out-Null
+          Copy-Item (Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.2.exe') $package
+          Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'Active_Edition/browser-extension') (Join-Path $package 'browser-extension') -Recurse
+          Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'Active_Edition/browser-extension-firefox') (Join-Path $package 'browser-extension-firefox') -Recurse
+          Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'Active_Edition/README.md') (Join-Path $package 'README.txt')
+      - name: Create reproducible distribution ZIP and SHA-256 manifest
+        shell: pwsh
+        working-directory: .
+        run: |
+          $package=Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.2'
+          $docs=Join-Path $package 'docs'
+          New-Item -ItemType Directory -Force -Path $docs | Out-Null
+          Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'docs/SentinelGuard-4.2-*.md') $docs
+          $zip=Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.2-SECURITY-CANDIDATE-REVIEW-ONLY.zip'
+          Compress-Archive -Path "$package/*" -DestinationPath $zip -CompressionLevel Optimal -Force
+          $hash=(Get-FileHash -Algorithm SHA256 $zip).Hash.ToLowerInvariant()
+          "$hash  SentinelGuard-4.2-SECURITY-CANDIDATE-REVIEW-ONLY.zip" | Set-Content -Encoding ascii (Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.2.SHA256')
+          Get-Content (Join-Path $env:RUNNER_TEMP 'SentinelGuard-4.2.SHA256')
+      - name: Publish v4.2 CI-built ZIP and checksum
+        uses: actions/upload-artifact@v4
+        with:
+          name: SentinelGuard-4.2-REVIEW-ONLY-CI-ZIP
+          path: |
+            ${{ runner.temp }}/SentinelGuard-4.2-SECURITY-CANDIDATE-REVIEW-ONLY.zip
+            ${{ runner.temp }}/SentinelGuard-4.2.SHA256
+          if-no-files-found: error
+          retention-days: 30
+      - name: Publish unreviewed v4.2 Windows CI build
+        uses: actions/upload-artifact@v4
+        with:
+          name: SentinelGuard-4.2-Windows-CI-Built-NOT-FIELD-TESTED
+          path: ${{ runner.temp }}/SentinelGuard-4.2/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Publish resolved Go module checksums for source reproducibility
+        uses: actions/upload-artifact@v4
+        with:
+          name: SentinelGuard-4.2-Go-Dependency-Lock
+          path: |
+            SentinelLite_Source/SentinelLite/src/go.mod
+            SentinelLite_Source/SentinelLite/src/go.sum
+          retention-days: 14
+  race-validation:
+    name: Concurrency race checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: SentinelLite_Source/SentinelLite/src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: SentinelLite_Source/SentinelLite/src/go.mod
+          cache: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Go race detector for concurrent scanning and watcher
+        run: go test -race -count=1 -run '^Test(Active|StandardEdition|Stage12SustainedCustomScanAndConcurrentStatus|Stage12ResourceMetricsResetAndReport|Stage12CancelledScanStopsTelemetry|V4ActiveClaudeFullInertDownloadSimulation|V41)' ./...
+ .
+          if ($LASTEXITCODE -ne 0) { throw 'Core process-safety regression gate failed; do not proceed to full survey or build' }
       - name: Run all synthetic detector and active-mode tests
         run: go test -count=1 -v ./...
       - name: Build desktop Windows executable
