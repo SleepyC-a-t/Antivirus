@@ -93,27 +93,29 @@ The patched `v42VerifySignature` now:
 - Leaves publisher text **unavailable** until native certificate extraction
   receives an independent security review. It starts no interpreter.
 
-In particular, the current 48-point remote-injection-import PE rule remains
-correlative, **not proof of malware**. The new read-only Windows CI
-`TestSecurityThirdPartyPEImport48PointRuleSurvey` reports sampled
-third-party parsed PE counts and rule matches, while explicitly recording
-unavailable game-launcher roots rather than inventing their results.
+In particular, the **formerly 48-point** standalone
+remote-injection-import rule is now a **28-point advisory** without independent
+corroboration. It is correlative, **not proof of malware**. The read-only
+`TestSecurityThirdPartyPEImport48PointRuleSurvey` measured 31 advisory
+matches across 8,499 expected-benign parsed PEs; not all third-party game
+launchers were present on the runner, and no real-malware sensitivity is
+inferred.
 
-## Process counter and remaining experimental Defender boundary
+## Windows-observed process tripwire and experimental Defender boundary
 
-`status.childProcessesStarted` counts process starts initiated directly by
-SentinelGuard's selected external Defender helper. It resets per scan; heuristic
-scan expects 0. This is **application bookkeeping only, not an OS-level
-process monitor**. Scanned files never contribute to the counter because they
-are not intended to run.
+`status.childProcessesObserved`, `childProcessEntries`,
+`childProcessImages` and sampling/error/warning fields are accumulated from
+Windows Toolhelp32 snapshots every 250 ms and at scan end. A heuristic scan
+warns about any observed child. This is **real OS-observed data, but sampled**:
+extremely short-lived processes may be missed. It does not replace full ETW.
 
-In explicitly selected Defender mode, a Windows Job Object is configured with
-`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`. Assignment occurs just after
-`cmd.Start`, leaving a narrow assignment race. Failure to configure or assign
-the Job Object fails closed and kills the root process. Closing the Job Object
-after completion attempts to terminate remaining descendants. The separately
-managed Windows Defender service may continue independently. Defender remains
-optional and OFF by default.
+In explicitly selected Defender mode, the helper starts with
+`CREATE_SUSPENDED` and is assigned to a Windows Job Object configured with
+`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` **before its primary thread resumes**.
+Failure to create, assign or resume fails closed and kills the root process.
+Cancellation closes the Job Object to end its helper tree. The separately
+managed Windows Defender service may continue independently. Defender
+remains experimental, optional and OFF by default.
 
 ## Windows Sandbox / Process Monitor independent lab runbook
 
