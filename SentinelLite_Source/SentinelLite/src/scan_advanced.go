@@ -58,15 +58,21 @@ func inspectZIP(p string,score *int,reasons *[]string) {
 func inspectZIPWithError(p string,score *int,reasons *[]string) error {
  zr,err:=zip.OpenReader(p);if err!=nil{return err};defer zr.Close()
  budget:=int64(2*1024*1024)
- inspectArchiveEntries(zr.File,0,&budget,score,reasons)
+ inspected:=0
+ inspectArchiveEntriesLimited(zr.File,0,&budget,&inspected,score,reasons)
  return nil
 }
 func inspectArchiveEntries(files []*zip.File,depth int,budget *int64,score *int,reasons *[]string) bool {
+    inspected:=0
+    return inspectArchiveEntriesLimited(files,depth,budget,&inspected,score,reasons)
+}
+func inspectArchiveEntriesLimited(files []*zip.File,depth int,budget *int64,inspected *int,score *int,reasons *[]string) bool {
  const maxEntries=4096
  const maxEntryBytes=int64(128*1024)
  const maxNestedBytes=int64(512*1024)
- for i,file:=range files {
-  if i>=maxEntries || *budget<=0 {break}
+ for _,file:=range files {
+  if *inspected>=maxEntries || *budget<=0 {break}
+  *inspected++
   if file.FileInfo().IsDir(){continue}
   name:=truncate(file.Name,120)
   ext:=strings.ToLower(filepath.Ext(file.Name))
@@ -74,8 +80,14 @@ func inspectArchiveEntries(files []*zip.File,depth int,budget *int64,score *int,
    *score+=65;*reasons=append(*reasons,"Archive contains disguised executable: "+name);return true
   }
   nested:=depth<3 && isZIPContainer(ext)
-  if !nested && !scriptExtensions[ext] && !isThreatScriptExtension(ext) && ext!=".lnk" && !isDocumentOrImage(ext) && !stage9InspectableExtension(ext) && !stage10InspectableExtension(ext) && !stage11InspectableExtension(ext) && !stage12InspectableExtension(ext){continue}
+  // The harmless EICAR test signature may be inside *any* archive
+  // entry, including eicar.com. Do not restrict detection by extension.
+  exactEICARCandidate:=file.UncompressedSize64>=68&&file.UncompressedSize64<=128
+  if !nested && !exactEICARCandidate && !scriptExtensions[ext] && !isThreatScriptExtension(ext) && ext!=".lnk" && !isDocumentOrImage(ext) && !stage9InspectableExtension(ext) && !stage10InspectableExtension(ext) && !stage11InspectableExtension(ext) && !stage12InspectableExtension(ext){continue}
+  // Reject decompression bombs: cap entry size, compressed bytes,
+  // expansion ratio, recursion depth and a global archive read budget.
   if file.CompressedSize64>16*1024*1024 {continue}
+  if file.UncompressedSize64 > 0 && file.UncompressedSize64>file.CompressedSize64*100+4096 {continue}
   limit:=maxEntryBytes
   if nested {limit=maxNestedBytes}
   if limit>*budget {limit=*budget}
@@ -85,7 +97,7 @@ func inspectArchiveEntries(files []*zip.File,depth int,budget *int64,score *int,
   if nested {
    if int64(len(buf))!=int64(file.UncompressedSize64){continue}
    z,err:=zip.NewReader(bytes.NewReader(buf),int64(len(buf)))
-   if err==nil && inspectArchiveEntries(z.File,depth+1,budget,score,reasons){return true}
+   if err==nil && inspectArchiveEntriesLimited(z.File,depth+1,budget,inspected,score,reasons){return true}
    continue
   }
   if file.UncompressedSize64==uint64(len(buf)) && isExactEICAR(buf){

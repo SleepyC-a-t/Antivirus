@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>SentinelGuard — Local Malware Review</title>
+<title>SentinelGuard 4.2 — Local Malware Review</title>
 <style>
 :root{color-scheme:dark;--bg:#090e18;--panel:#111b2a;--panel2:#152237;--line:#27364b;--text:#e9eef8;--sub:#9facbf;--accent:#75e0c1;--accent2:#37b899;--warning:#f9cb7b;--red:#fe9393;--blue:#82b7fa}
 *{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse 90% 60% at 85% -10%,#19324a 0%,var(--bg) 70%);font:14px/1.5 system-ui,"Segoe UI",Arial,sans-serif;color:var(--text);min-height:100vh}button,input,select{font:inherit}button{cursor:pointer}button:disabled{opacity:.44;cursor:not-allowed}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
@@ -50,20 +50,21 @@ button{background:#203149;border:1px solid #39516b;color:#dce7f9;padding:10px 14
 </head>
 <body>
 <div class="wrap">
- <header class="top"><div class="brand"><div class="mark">◆</div><div><h1>SentinelGuard <span style="font-size:10px;font-weight:600;color:var(--accent);vertical-align:top">v3.3</span></h1><small>On-demand threat investigation · Windows 10 / 11</small></div></div><div class="top-actions"><span class="tag">● Local-only · No uploads</span><button class="outline" id="windowsSecurity">Open Windows Security</button><button class="outline" id="exit">Exit application</button></div></header>
- <section class="hero"><span class="eyebrow">SENTINELGUARD 4.0 · DESKTOP SECURITY CENTER</span><h2>Inspect first. Decide what happens next.</h2><p>One security center for on-demand scanning and optional download protection. Your live shield starts <strong>OFF</strong>. Heuristic findings are evidence for review, not proof of infection. Keep your main antivirus enabled.</p></section>
- <div class="shell">
+ <header class="top"><div class="brand"><div class="mark">◆</div><div><h1>SentinelGuard <span style="font-size:10px;font-weight:600;color:var(--accent);vertical-align:top" id="appVersionBadge">v4.2</span></h1><small>On-demand threat investigation · Windows 10 / 11</small></div></div><div class="top-actions"><span class="tag">● Local-only · No uploads</span><button class="outline" id="windowsSecurity">Open Windows Security</button><button class="outline" id="exit">Exit application</button></div></header>
+ <section class="hero"><span class="eyebrow" id="appEditionHeader">SENTINELGUARD 4.2 · DESKTOP SECURITY CENTER</span><h2>Inspect first. Decide what happens next.</h2><p>One security center for on-demand scanning and optional download protection. Your live shield starts <strong>OFF</strong>. Heuristic findings are evidence for review, not proof of infection. Keep your main antivirus enabled.</p></section>
+ <div class="info warn" role="alert" id="securityHoldBanner"><strong>SECURITY HOLD — REVIEW-ONLY CANDIDATE.</strong> The full-scan PowerShell incident is fixed in CI, pending independent Windows field verification. This unsigned build is not approved for ordinary use. Keep Defender enabled.</div>
+  <div class="shell">
   <aside><div class="panel"><h3>Configure a scan</h3><p class="section-desc">Choose a scanning engine and the areas to inspect. Nothing is quarantined automatically by SentinelGuard.</p>
     <div class="control-label">Scanning engine</div>
     <label class="choice"><input type="radio" name="engine" value="heuristic" checked><div><b>Fast heuristic review</b><span>Inspects file metadata, script commands, persistence signals, archive entries, and suspicious behavior combinations.</span></div></label>
-    <label class="choice"><input type="radio" name="engine" value="defender"><div><b>Microsoft Defender scan</b><span>Uses installed antivirus signatures without requested remediation. May be much slower.</span></div></label>
+    <label class="choice"><input type="radio" name="engine" value="defender"><div><b>Microsoft Defender scan — experimental external helper (OFF by default)</b><span>Opt-in only. Starts a Windows Defender helper in a kill-on-close Job Object; the separately managed Defender service may continue after Stop. Keeps native Defender protection enabled and requests no remediation.</span></div></label>
     <label class="control-label" for="mode">Scan scope</label><select id="mode"><option value="quick">Quick · User & startup folders</option><option value="full">Full · All local drive letters</option><option value="custom">Custom · Choose a folder</option></select>
     <div id="customWrap" class="hide"><label class="control-label" for="customPath">Folder to scan (including subfolders)</label><button type="button" class="outline btn-full" id="browseFolder">Browse folders…</button><input id="customPath" type="text" placeholder="Choose a folder above, or enter a path" spellcheck="false" autocomplete="off" aria-label="Selected folder path"><p class="hint" style="margin:6px 0 0">Select a folder in the Windows picker and click <b>Choose folder</b>. SentinelGuard will examine accessible files in that folder and its subfolders. You can also enter a path manually.</p></div>
     <button class="primary btn-full" id="scan">Start scan</button><button class="outline btn-full hide" id="cancel">Stop scanning</button>
     <p class="hint" id="engineHint">Bounded, read-only inspection of suspicious patterns; no file execution or automatic quarantine.</p>
     <div id="defenderNote" class="info warn hide"><strong>About Defender:</strong> Uses the documented <span class="kbd">-DisableRemediation</span> scan switch. Defender's *separate real-time protection* can still act under your existing Windows settings. Administrator access may be required.</div>
     <div class="progress"><div class="progress-head"><b id="statusText">Ready for a scan</b><span class="small muted" id="elapsed">Idle</span></div><div class="meter" id="meter"><i></i></div><div class="path-current" id="current">No scan in progress.</div><div class="error hide" id="error"></div></div>
-    <div class="info"><strong>v3.3 threat intelligence:</strong> Expanded context-aware analysis of scripts, suspicious shortcuts, archive contents, task XML, registry imports, structured configurations and extortion notes. Detections are advisory, not proof of infection. Benign examples and inactive code should be treated cautiously. <strong>Suspicious does not mean infected.</strong></div>
+    <div class="info"><strong>Threat intelligence:</strong> Expanded context-aware analysis of scripts, suspicious shortcuts, archive contents, task XML, registry imports, structured configurations and extortion notes. Detections are advisory, not proof of infection. Benign examples and inactive code should be treated cautiously. <strong>Suspicious does not mean infected.</strong></div>
     <div class="info"><strong>False positives are possible.</strong> Startup shortcuts, legitimate scripts, and software in AppData can all look unusual. Do not quarantine files you have not assessed.</div>
    </div></aside>
   <main>
@@ -78,9 +79,15 @@ button{background:#203149;border:1px solid #39516b;color:#dce7f9;padding:10px 14
       <p class="active-sub">Review-level findings are never automatically quarantined. There is a delay after a download finishes; do not open untrusted files before your main antivirus scans them.</p></div>
       <div class="active-options"><b>Folders monitored:</b><div id="activeWatchedFolders" class="active-watch">Not configured</div>
       <div class="active-btns"><button class="outline" id="activeAddFolder">Add folder…</button><button class="outline" id="activeRemoveFolder">Remove folder…</button></div></div>
+      <div class="active-options"><b>Scan &amp; Run — optional launch review</b>
+      <p class="active-sub">Only checks Windows EXE programs that you explicitly select here. This cannot pause programs launched from Explorer or other apps; it is not a system-wide pre-execution blocker. A finding is not proof of malware.</p>
+      <label><input id="activeLaunchToggle" type="checkbox"> Enable Scan &amp; Run (OFF by default)</label>
+      <div class="active-btns"><button class="outline" id="activeLaunch">Choose EXE, inspect, then ask before launch…</button></div>
+      <p id="launchReviewStatus" class="active-sub">Approval is required before SentinelGuard launches the selected program.</p></div>
       <div class="active-options"><b>Browser protection (optional companion extension)</b>
-      <p class="active-sub">Blocks exact phishing URLs from a free community feed in Firefox/Chrome/Edge after you pair the extension. Controlled by the ON/OFF switch, with up to a 1-minute delay. Never intercepts or uploads browsing history.</p>
-      <div class="active-btns"><button class="outline" id="activePair">Copy read-only browser pairing link</button><button class="outline" id="activeReport">Export protection report</button></div>
+      <p class="active-sub">Blocks exact phishing URLs from a free community feed in Firefox/Chrome/Edge after you pair the extension. Controlled by the ON/OFF switch, with with a short synchronization delay. Never intercepts or uploads browsing history.</p>
+      <div class="active-btns"><button class="outline" id="activePair">Copy read-only browser pairing link</button><button class="outline" id="activePairRevoke">Revoke browser pairing</button><button class="outline" id="activeReport">Export protection report</button></div>
+      <label class="active-sub"><input id="exportRedact" type="checkbox"> Redact paths and filenames in exported JSON (recommended before sharing)</label>
       <p id="activeMessage" class="active-sub"></p></div>
       <div class="active-options"><b>Recent protection events</b><div id="activeEvents" class="active-events">No events yet.</div></div>
     </section>
@@ -94,14 +101,17 @@ button{background:#203149;border:1px solid #39516b;color:#dce7f9;padding:10px 14
         <div class="resource-tile"><small>RAM · Current</small><b id="memoryCurrent">—</b></div>
         <div class="resource-tile"><small>RAM · Average</small><b id="memoryAverage">—</b></div>
         <div class="resource-tile"><small>RAM · Sampled peak</small><b id="memoryPeak">—</b></div>
+        <div class="resource-tile"><small>Child processes observed by Windows</small><b id="childProcessesObserved">0</b></div>
       </div>
-      <p class="resource-foot" id="resourceNote">Measures SentinelGuard's own process during the scan (sampled every second), not total system resource use. Average and peak values remain visible when the scan completes. CPU is normalized to all logical processors; memory is the Windows working set. If Defender is used, its separate process is not included.</p>
+      <p class="resource-foot" id="childProcessImages">No direct children observed.</p>
+      <div class="info warn hide" id="childProcessAlert" role="alert"></div>
+      <p class="resource-foot" id="resourceNote">Measures SentinelGuard's own process during the scan (sampled every second), not total system resource use. Average and peak values remain visible when the scan completes. CPU is normalized to all logical processors; memory is the Windows working set. The Windows Toolhelp32 tripwire samples direct children four times a second and at scan completion. It records image names and PIDs. Very short-lived children can be missed. Zero is NOT proof no child started. Heuristic scanning should show zero; explicit Defender scans can create a separate helper; Defender service activity is not included.</p>
     </section>
 
     <div class="panel content-panel"><div class="tabs"><button class="tab active" data-tab="findings">Findings</button><button class="tab" data-tab="vault">Quarantine <span id="vaultCount" class="small"></span></button></div>
       <div id="findingsTab"><div class="tools"><input type="text" class="search" id="search" placeholder="Search name, path or reason…"><select id="filter"><option value="all">All severity levels</option><option value="High">High</option><option value="Elevated">Elevated</option><option value="Review">Review</option></select><button id="export">Export report</button></div>
         <details class="report-privacy" id="reportPrivacy"><summary>Privacy and JSON report contents — read before sharing</summary>
-          <p><strong>Includes:</strong> product name and version; export timestamp (<code>exportedAt</code>); a notice; scan status (<code>active</code>, <code>mode</code>, <code>current</code> scan path, file/skipped/finding/omitted counts, scan start time, error text, and <code>resources</code> containing the CPU and memory current/average/peak values, sample count, and sample timestamp). <code>current</code> and errors can contain full folder or drive paths.</p>
+          <p><strong>Includes:</strong> product name and version; export timestamp (<code>exportedAt</code>); a notice; scan status (<code>active</code>, <code>mode</code>, <code>current</code> scan path, file/skipped/finding/omitted counts, scan start time, error text, and <code>resources</code> containing the CPU and memory current/average/peak values, sample count, and sample timestamp). <code>status.childProcessesObserved</code>, <code>childProcessImages</code>, <code>childProcessEntries</code>, <code>childProcessSampleCount</code>, <code>childProcessMonitoringError</code>, and <code>childProcessWarning</code> are sampled Toolhelp32 results. They reveal process names, PIDs and first-seen timestamps; a child that exits between samples can be missed. <code>current</code> and errors can contain full folder or drive paths.</p>
           <p><strong>Skipped paths:</strong> <code>skippedPaths</code> lists full filesystem paths and readable reasons (for example, access denied, reparse point, or an archive inspection limit). <code>status.skipLogOmitted</code> counts any records beyond the 100,000-entry memory safety limit. Unlike the previous version, a scan may contain more identifiable filesystem metadata even when no threats were found. Defender's separate engine does not expose per-file skip telemetry.</p>
           <p><strong>For each flagged item:</strong> a random per-scan finding ID, full <code>path</code>, filename, score, severity, detection engine, written explanations, file size, last-modified timestamp, and whether manual quarantine is available. A reason may mention filenames inside an archive or a detected threat name.</p>
           <p><strong>Personal information that may be revealed:</strong> your Windows account name inside <code>C:\Users\...</code> paths, drive letters, folder names, project/document names, and Windows account SID strings (for example in Recycle Bin paths). File names and timestamps may reveal what software or documents you use and when they were modified. The skipped-path list can additionally expose folders and private filenames unrelated to detected threats. The random finding ID is not a Windows user ID.</p>
@@ -143,6 +153,9 @@ function renderResources(){
  metric('memoryCurrent',has&&r.samples?r.currentMemoryMiB:null,' MiB');
  metric('memoryAverage',has&&r.samples?r.averageMemoryMiB:null,' MiB');
  metric('memoryPeak',has&&r.samples?r.peakMemoryMiB:null,' MiB');
+ $('childProcessesObserved').textContent=state.status.childProcessMonitoringAvailable&&!state.status.childProcessMonitoringError?fmt(state.status.childProcessesObserved||0):'Unknown';
+ const images=state.status.childProcessImages||[];
+ $('childProcessImages').textContent=images.length?'Observed images: '+images.join(', '):'No direct child processes seen in samples.';
  $('resourceState').textContent=state.connectionLosses>=3?'Disconnected — last known readings':(!has?'No scan yet':(state.status.active?'Live · '+fmt(r.samples||0)+' samples':'Completed · '+fmt(r.samples||0)+' samples'));
 }
 function renderStatus(){
@@ -156,7 +169,9 @@ function renderStatus(){
  $('browseFolder').disabled=!!s.active||state.starting||disconnected;
  $('cancel').classList.toggle('hide',!s.active||disconnected);
  $('current').textContent=s.current|| (s.active?'Initializing scanner…':'No scan in progress.');
- let warning=[s.error,s.omitted?`${fmt(s.omitted)} suspicious findings omitted at the 3,000-result limit; results incomplete.`:'',disconnected?'Local scanner unavailable. Values shown are stale. If the executable stopped, inspect the app-data SentinelGuard diagnostics log (Logs folder) for diagnostics.':''].filter(Boolean).join(' | ');
+ $('childProcessAlert').classList.toggle('hide',!s.childProcessWarning&&!s.childProcessMonitoringError);
+  $('childProcessAlert').textContent=[s.childProcessWarning,s.childProcessMonitoringError?'Process observation error: '+s.childProcessMonitoringError:''].filter(Boolean).join(' | ');
+  let warning=[s.error,s.omitted?`${fmt(s.omitted)} suspicious findings omitted at the 3,000-result limit; results incomplete.`:'',disconnected?'Local scanner unavailable. Values shown are stale. If the executable stopped, inspect the app-data SentinelGuard diagnostics log (Logs folder) for diagnostics.':''].filter(Boolean).join(' | ');
  $('error').classList.toggle('hide',!warning);$('error').textContent=warning;
  $('elapsed').textContent=s.started?((Date.now()-Date.parse(s.started))/1000/60).toFixed(1)+' min since start':'Idle';
  $('quarantineSelected').disabled=s.active||disconnected||selectedCount()===0;
@@ -165,7 +180,8 @@ function renderStatus(){
 async function refresh(){
  try{
   let j=await api('/api/snapshot');state.connectionLosses=0;state.status=j.status;state.findings=j.findings||[];
-  if(j.product?.activeEdition){document.querySelector('#activeProtectionPanel').classList.remove('hide');document.title='SentinelGuard 4.0 · Security Center';if(!state.activeEdition){state.activeEdition=true;refreshActive();}}
+  if(j.product?.edition){document.title=j.product.edition+' · Security Center';$('appEditionHeader').textContent=j.product.edition.toUpperCase()+' · DESKTOP SECURITY CENTER';$('appVersionBadge').textContent='v'+j.product.version;}
+   if(j.product?.activeEdition){document.querySelector('#activeProtectionPanel').classList.remove('hide');if(!state.activeEdition){state.activeEdition=true;refreshActive();}}
   for(let id of [...state.selected])if(!state.findings.some(f=>f.id===id&&f.canQuarantine))state.selected.delete(id);
   renderStatus();if(state.activeTab==='findings')renderFindings();
  }catch(e){state.connectionLosses++;if(state.connectionLosses>=3)renderStatus()}
@@ -207,6 +223,8 @@ async function refreshActive(){
    $('activeState').className=j.enabled?'active-good':'active-bad';
    $('activeToggle').textContent=j.enabled?'Turn protection OFF':'Turn protection ON';
    $('activeAutoBlock').checked=!!j.autoQuarantine;
+   $('activeLaunchToggle').checked=!!j.launchReviewEnabled;
+   $('activeLaunch').disabled=!(j.enabled&&j.launchReviewEnabled);
    $('activeInspected').textContent=fmt(j.inspected||0);
    $('activeFlagged').textContent=fmt(j.flagged||0);
    $('activeBlocked').textContent=fmt(j.quarantined||0);
@@ -247,6 +265,39 @@ $('activeRemoveFolder').onclick=async()=>{
  if(!folder)return;
  try{await api('/api/active/unwatch',{Path:folder});await refreshActive()}catch(e){toastError(e)}
 };
+$('activeLaunchToggle').onchange=async()=>{
+ try {await api('/api/active/launch-toggle',{Enabled:$('activeLaunchToggle').checked});await refreshActive()}
+ catch(e){toastError(e);await refreshActive()}
+};
+$('activeLaunch').onclick=async()=>{
+ try {
+   const r=await api('/api/active/launch-choose',{});
+   if(r.cancelled)return;
+   const details=r.reasons?.length?r.reasons.join('\n  • '):'No heuristic indicators found.';
+   const warning=r.score>=50?'\n\nWARNING: SentinelGuard flagged potentially suspicious behavior.':'';
+   const promptText='Scan & Run — REVIEW BEFORE LAUNCH\n\n'+r.path+
+     '\nSize: '+r.size+' bytes\nSHA-256: '+r.sha256+
+     '\nAuthenticode (embedded signatures only): '+r.authenticode+'\nPublisher: '+r.publisher+'\nNot verified means unknown, not suspicious. Catalog-signed files are not resolved by this scanner.'+
+     '\nWindows origin: '+r.zone+
+     '\nScore: '+r.score+' | '+r.severity+
+     '\nInspection: '+r.inspection+
+     '\nIndicators:\n  • '+details+warning+
+     '\n\n'+r.warning+'\n\nRun this program anyway?';
+   let approved=confirm(promptText);
+   if(approved&&r.internetZone){
+      approved=confirm('SECOND CONFIRMATION — DOWNLOADED FROM THE INTERNET\n\n'+r.path+
+       '\nWindows marked this executable as internet/restricted-zone content. Your primary antivirus and Windows security prompts still apply. Run anyway?');
+   }
+   await api('/api/active/launch-decision',{Ticket:r.ticket,Approve:approved});
+   $('launchReviewStatus').textContent=approved?'Approved: Windows was asked to launch the selected executable.':'Launch cancelled; no program started by SentinelGuard.';
+   await refreshActive();
+ }catch(e){toastError(e);$('launchReviewStatus').textContent='Launch review error: '+e.message;await refreshActive()}
+};
+$('activePairRevoke').onclick=async()=>{
+ if(!confirm('Revoke all existing browser extension pairings? You will need to pair your browsers again.'))return;
+ try{await api('/api/active/browser-revoke',{});$('activeMessage').textContent='Browser access revoked. Re-pair extensions to restore URL blocking.'}
+ catch(e){toastError(e)}
+};
 $('activePair').onclick=async()=>{
  try{
    const response=await api('/api/active/browser-pair');
@@ -256,7 +307,7 @@ $('activePair').onclick=async()=>{
 };
 $('activeReport').onclick=()=>{
  const a=document.createElement('a');
- a.href='/api/active/report?token='+encodeURIComponent(TOKEN);
+ a.href='/api/active/report?token='+encodeURIComponent(TOKEN)+($('exportRedact').checked?'&redact=1':'');
  a.download='SentinelGuard_Active_Report.json';
  document.body.appendChild(a);a.click();a.remove();
 };
@@ -269,7 +320,7 @@ document.querySelectorAll('[name=engine]').forEach(e=>e.onchange=updateEngine);
 $('scan').onclick=start;$('cancel').onclick=async()=>{try{await api('/api/stop',{})}catch(e){toastError(e)}};
 $('windowsSecurity').onclick=async()=>{try{await api('/api/security',{})}catch(e){toastError(e)}};
 $('exit').onclick=async()=>{if(!confirm('Exit SentinelGuard? Scanning, if active, will stop.'))return;try{await api('/api/exit',{});document.body.innerHTML='<main style="max-width:600px;margin:100px auto;padding:30px;color:#cbd5e1;font:18px system-ui"><h2>SentinelGuard closed.</h2><p>You can close this browser tab. Restart SentinelGuard.exe to run another scan.</p></main>'}catch(e){toastError(e)}};
-$('export').onclick=()=>{const a=document.createElement('a');a.href='/api/report?token='+encodeURIComponent(TOKEN);a.download='SentinelGuard_v4.0_Report.json';document.body.appendChild(a);a.click();a.remove()};
+$('export').onclick=()=>{const a=document.createElement('a');a.href='/api/report?token='+encodeURIComponent(TOKEN)+($('exportRedact').checked?'&redact=1':'');a.download='SentinelGuard_v4.2_Report.json';document.body.appendChild(a);a.click();a.remove()};
 $('refreshVault').onclick=refreshVault;document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>tabs(b.dataset.tab));
 async function poll(){await refresh();setTimeout(poll,1000)}
 poll();refreshVault();

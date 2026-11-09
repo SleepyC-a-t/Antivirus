@@ -163,7 +163,7 @@ func TestStage12ResourceMetricsResetAndReport(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
 		t.Fatal(err)
 	}
-	if out.Version != "4.0" || out.Status.Resources.Samples < 2 {
+	if out.Version != "4.2" || out.Status.Resources.Samples < 2 {
 		t.Fatalf("missing report metrics %+v", out)
 	}
 	if _, err := app.begin("heuristic:custom"); err != nil {
@@ -181,7 +181,7 @@ func TestStage12UIResourcePanelAndReconnectNotice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, s := range []string{"cpuCurrent", "cpuAverage", "cpuPeak", "memoryCurrent", "memoryAverage", "memoryPeak", "connectionLosses", "last known readings", "v4.0"} {
+	for _, s := range []string{"cpuCurrent", "cpuAverage", "cpuPeak", "memoryCurrent", "memoryAverage", "memoryPeak", "connectionLosses", "last known readings", "appEditionHeader", "appVersionBadge", "SENTINELGUARD 4.2"} {
 		if !strings.Contains(string(html), s) {
 			t.Errorf("missing UI element/notice %q", s)
 		}

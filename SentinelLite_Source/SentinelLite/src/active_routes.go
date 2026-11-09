@@ -1,6 +1,7 @@
 package main
 
 import(
+    "fmt"
     "net/http"
     "time"
 )
@@ -15,12 +16,22 @@ func registerActiveRoutes(mux *http.ServeMux,s *Server){
         if r.Method!=http.MethodGet{http.Error(w,"GET required",405);return}
         // Browser pairings are *read-only*. They cannot toggle scanning,
         // request quarantine, delete files or control the local application.
-        sendJSON(w,map[string]any{"pairing":"http://"+s.address+"/api/active/extension-status?pair="+s.extensionToken})
+        pair,persisted:=s.pairSnapshot()
+        sendJSON(w,map[string]any{"pairing":"http://"+s.address+"/api/active/extension-challenge?pair="+pair,"persistent":persisted})
     })
-    mux.HandleFunc("/api/active/extension-status",func(w http.ResponseWriter,r *http.Request){
+    mux.HandleFunc("/api/active/browser-revoke",func(w http.ResponseWriter,r *http.Request){
+        if !requirePost(w,r){return}
+        if err:=s.updatePairToken();err!=nil{apiError(w,http.StatusInternalServerError,err);return}
+        sendJSON(w,map[string]any{"revoked":true,"note":"Previous extension pairing is now invalid."})
+    })
+    mux.HandleFunc("/api/active/extension-challenge",func(w http.ResponseWriter,r *http.Request){
         if r.Method!=http.MethodGet{http.Error(w,"GET required",405);return}
+        nonce:=r.URL.Query().Get("nonce")
+        if !browserChallengeNonce.MatchString(nonce){apiError(w,400,fmt.Errorf("invalid challenge nonce"));return}
         snap:=s.active.snapshot()
-        sendJSON(w,map[string]any{"enabled":snap.Enabled,"edition":"SentinelGuard 4.0","paired":true,"browserProtectionNote":"The extension blocks exact addresses listed by the opted-in phishing feed; it cannot examine web page content or all HTTPS traffic."})
+        mac:=s.browserChallengeMAC(nonce,snap.Enabled)
+        if mac==""{apiError(w,503,fmt.Errorf("browser credential unavailable"));return}
+        sendJSON(w,map[string]any{"enabled":snap.Enabled,"edition":appEdition,"nonce":nonce,"mac":mac})
     })
     mux.HandleFunc("/api/active/toggle",func(w http.ResponseWriter,r *http.Request){
         if !requirePost(w,r){return}
@@ -34,6 +45,13 @@ func registerActiveRoutes(mux *http.ServeMux,s *Server){
         var req struct{ Enabled bool }
         if err:=readJSON(r,&req);err!=nil{apiError(w,400,err);return}
         s.active.setAutoQuarantine(req.Enabled)
+        sendJSON(w,s.active.snapshot())
+    })
+    mux.HandleFunc("/api/active/launch-toggle",func(w http.ResponseWriter,r *http.Request){
+        if !requirePost(w,r){return}
+        var req struct{Enabled bool}
+        if err:=readJSON(r,&req);err!=nil{apiError(w,400,err);return}
+        s.active.setLaunchReview(req.Enabled)
         sendJSON(w,s.active.snapshot())
     })
     mux.HandleFunc("/api/active/watch",func(w http.ResponseWriter,r *http.Request){
@@ -57,7 +75,13 @@ func registerActiveRoutes(mux *http.ServeMux,s *Server){
     })
     mux.HandleFunc("/api/active/report",func(w http.ResponseWriter,r *http.Request){
         if r.Method!=http.MethodGet{http.Error(w,"GET required",405);return}
-        w.Header().Set("Content-Disposition",`attachment; filename="SentinelGuard_v4.0_Live_Report.json"`)
-        sendJSON(w,map[string]any{"product":"SentinelGuard 4.0","version":"4.0","exportedAt":time.Now(),"status":s.active.snapshot(),"privacy":"Contains absolute file paths, scan detection reasons and local timestamps. No internet history, passwords, cookies or uploaded file contents."})
+        w.Header().Set("Content-Disposition",`attachment; filename="SentinelGuard_v4.2_Live_Report.json"`)
+        report:=map[string]any{"product":appEdition,"version":appVersion,"exportedAt":time.Now(),"status":s.active.snapshot(),"privacy":"Contains absolute file paths, scan detection reasons and local timestamps. No internet history, passwords, cookies or uploaded file contents."}
+        if r.URL.Query().Get("redact")=="1"{
+            masked,err:=v42RedactReport(report)
+            if err!=nil{apiError(w,500,err);return}
+            sendJSON(w,masked);return
+        }
+        sendJSON(w,report)
     })
 }

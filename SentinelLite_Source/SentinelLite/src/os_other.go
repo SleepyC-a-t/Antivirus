@@ -10,7 +10,6 @@ import (
 
 func isReparse(p string) bool           { return false }
 func fixedAndRemovableDrives() []string { return []string{} }
-func openBrowser(url string) error      { return nil }
 func openLocation(p string) error       { return errors.New("Windows-only feature") }
 func openWindowsSecurity() error        { return errors.New("Windows-only feature") }
 func reportStartupError(s string)       {}

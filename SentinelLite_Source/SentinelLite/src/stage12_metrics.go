@@ -4,6 +4,8 @@ import (
 	"log"
 	"math"
 	"runtime"
+	"sort"
+	"strings"
 	"time"
 )
 
@@ -46,6 +48,7 @@ func (a *App) resetMetricsLocked() {
 	a.resources = ScanResourceUsage{MemoryBasis: kind, CPUAvailable: err == nil, LastSample: now}
 	a.lastResourceCPU = cpu
 	a.lastResourceAt = now
+	a.childSeen = make(map[uint32]ObservedChildProcess)
 	a.cpuObservations = 0
 	a.memObservations = 0
 	a.sumCPUPercent = 0
@@ -67,6 +70,9 @@ func (a *App) resetMetricsLocked() {
 	go a.monitorResources(done)
 }
 func (a *App) monitorResources(done <-chan struct{}) {
+    a.sampleChildProcesses(done)
+    childTicker := time.NewTicker(250*time.Millisecond)
+    defer childTicker.Stop()
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	for {
@@ -75,6 +81,8 @@ func (a *App) monitorResources(done <-chan struct{}) {
 			return
 		case <-ticker.C:
 			a.sampleResources(done)
+        case <-childTicker.C:
+            a.sampleChildProcesses(done)
 		}
 	}
 }
@@ -127,10 +135,54 @@ func (a *App) stopResources() {
 		return
 	}
 	a.sampleResources(done)
+    a.sampleChildProcesses(done)
 	a.mu.Lock()
 	if a.resourceDone == done {
 		close(done)
 		a.resourceDone = nil
 	}
 	a.mu.Unlock()
+}
+
+// Toolhelp32 is polled at scan start, every 250ms, and at scan completion.
+// It can miss children that start AND exit between snapshots. A clean scan
+// counter is not proof that no child was created; use ETW for strong evidence.
+func (a *App) sampleChildProcesses(done <-chan struct{}) {
+    entries, available, err := sampleDirectChildProcesses()
+    a.mu.Lock()
+    defer a.mu.Unlock()
+    if a.resourceDone != done || !a.status.Active {
+        return // a delayed snapshot must not contaminate another scan
+    }
+    a.status.ChildProcessMonitoringAvailable = available
+    if !available { return }
+    if err != nil {
+        if a.status.ChildProcessMonitoringError == "" {
+            a.status.ChildProcessMonitoringError = err.Error()
+        }
+        if strings.HasPrefix(a.status.Mode,"heuristic:") && a.status.ChildProcessWarning == "" {
+            a.status.ChildProcessWarning = "Unable to verify child processes during heuristic scanning: OS process sampling failed."
+        }
+        return
+    }
+    a.status.ChildProcessSampleCount++
+    if a.childSeen == nil { a.childSeen = make(map[uint32]ObservedChildProcess) }
+    for _, child := range entries {
+        if _, exists := a.childSeen[child.PID]; exists { continue }
+        a.childSeen[child.PID] = child
+        a.status.ChildProcessesObserved++
+        if len(a.status.ChildProcessEntries) < maxObservedChildren {
+            a.status.ChildProcessEntries = append(a.status.ChildProcessEntries,child)
+        } else {
+            a.status.ChildProcessOmitted++
+        }
+    }
+    names := make(map[string]struct{})
+    for _, child := range a.status.ChildProcessEntries { names[child.Image] = struct{}{} }
+    a.status.ChildProcessImages = a.status.ChildProcessImages[:0]
+    for name := range names { a.status.ChildProcessImages = append(a.status.ChildProcessImages,name) }
+    sort.Strings(a.status.ChildProcessImages)
+    if a.status.ChildProcessesObserved > 0 && strings.HasPrefix(a.status.Mode,"heuristic:") {
+        a.status.ChildProcessWarning = "WARNING: OS process monitor observed a direct child during heuristic scanning. Stop scanning and review this incident."
+    }
 }

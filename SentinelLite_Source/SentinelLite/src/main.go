@@ -2,9 +2,13 @@ package main
 
 import (
 	"crypto/rand"
+    "crypto/hmac"
+    "crypto/sha256"
 	"crypto/subtle"
 	"embed"
 	"encoding/base64"
+    "regexp"
+    "strconv"
 	"encoding/json"
 	"errors"
 	"log"
@@ -13,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
     "strings"
+    "sync"
 	"sync/atomic"
 	"time"
 )
@@ -22,11 +27,18 @@ var pages embed.FS
 
 // Built separately with -ldflags '-X main.edition=active'. The standard
 // SentinelGuard executable retains its existing on-demand behavior.
-var edition = "integrated" // v4.0 combines manual and opt-in live scanning
+const appVersion = "4.2"
+const appEdition = "SentinelGuard " + appVersion
+var edition = "integrated" // unified manual + opt-in live scanning
 
 type Server struct {
     active *ActiveMonitor
     extensionToken string // read-only browser companion credential
+    pairMu sync.RWMutex
+    launchMu sync.Mutex
+    launchTickets map[string]launchTicket
+    launchRunner func(string) error
+    pairPersisted bool
 	app     *App
 	token   string
 	address string
@@ -34,6 +46,25 @@ type Server struct {
 	pickingFolder atomic.Bool
 }
 
+var browserChallengeNonce=regexp.MustCompile("^[A-Za-z0-9_-]{32,64}$")
+func (s *Server) browserChallengeMAC(nonce string,enabled bool) string {
+    key,_:=s.pairSnapshot()
+    raw,err:=base64.RawURLEncoding.DecodeString(key)
+    if err!=nil||len(raw)!=32{return ""}
+    mac:=hmac.New(sha256.New,raw)
+    mac.Write([]byte("SG"+appVersion+"|"+nonce+"|"+strconv.FormatBool(enabled)+"|"+appEdition))
+    return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
+func (s *Server) pairSnapshot()(string,bool) {
+ s.pairMu.RLock();defer s.pairMu.RUnlock()
+ return s.extensionToken,s.pairPersisted
+}
+func (s *Server) updatePairToken() error {
+ token,err:=rotateProtectedPairingToken()
+ if err!=nil{return err}
+ s.pairMu.Lock();s.extensionToken=token;s.pairPersisted=true;s.pairMu.Unlock()
+ return nil
+}
 func sendJSON(w http.ResponseWriter, val any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
@@ -74,7 +105,7 @@ func (s *Server) secure(next http.Handler) http.Handler {
 			return
 		}
 		if o := r.Header.Get("Origin"); o != "" && o != "http://"+s.address {
-            allowExtension := (edition=="integrated"||edition=="active") && r.URL.Path=="/api/active/extension-status" &&
+            allowExtension := (edition=="integrated"||edition=="active") && r.URL.Path=="/api/active/extension-challenge" &&
                 (strings.HasPrefix(o,"moz-extension://") || strings.HasPrefix(o,"chrome-extension://"))
             if !allowExtension {
                 http.Error(w,"invalid origin",403);return
@@ -90,8 +121,14 @@ func (s *Server) secure(next http.Handler) http.Handler {
 			t = r.URL.Query().Get("token")
 		}
 		authorized:=subtle.ConstantTimeCompare([]byte(t),[]byte(s.token))==1
-        if !authorized && (edition=="active"||edition=="integrated") && r.URL.Path=="/api/active/extension-status" {
-            authorized=s.extensionToken!=""&&subtle.ConstantTimeCompare([]byte(t),[]byte(s.extensionToken))==1
+        if !authorized && (edition=="active"||edition=="integrated") &&
+            r.URL.Path=="/api/active/extension-challenge" &&
+            r.Method==http.MethodGet &&
+            browserChallengeNonce.MatchString(r.URL.Query().Get("nonce")) {
+            // The extension never transmits its raw shared secret to a
+            // possibly spoofed localhost process. A fresh nonce binds the
+            // authenticated response; only the real app knows the DPAPI key.
+            authorized=true
         }
         if !authorized {
             http.Error(w,"access token required",403);return
@@ -123,7 +160,7 @@ func (s *Server) routes() http.Handler {
 	})
 	mux.HandleFunc("/api/snapshot", func(w http.ResponseWriter, r *http.Request) {
 		status, fs := s.app.snapshot()
-		sendJSON(w, map[string]any{"status": status, "findings": fs, "product": map[string]any{"name":"SentinelGuard","version":"4.0", "type":"manual and optional live-protection scanner","activeEdition":s.active!=nil,"desktop":true}})
+		sendJSON(w, map[string]any{"status": status, "findings": fs, "product": map[string]any{"name":"SentinelGuard","edition":appEdition,"version":appVersion, "type":"manual and optional live-protection scanner","activeEdition":s.active!=nil,"desktop":true}})
 	})
 	mux.HandleFunc("/api/choose-folder", func(w http.ResponseWriter, r *http.Request) {
         if !requirePost(w, r) { return }
@@ -385,9 +422,14 @@ func (s *Server) routes() http.Handler {
 		st, fs := s.app.snapshot()
 		skippedPaths := s.app.skippedSnapshot()
 		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Content-Disposition", `attachment; filename="SentinelGuard_v4.0_Report.json"`)
-		report:=map[string]any{"product": "SentinelGuard", "version": "4.0", "exportedAt": time.Now(), "status": st, "findings": fs, "skippedPaths": skippedPaths, "notice": "These findings may be false positives. Defender scans are separate from heuristic scans."}
+		w.Header().Set("Content-Disposition", `attachment; filename="SentinelGuard_v4.2_Report.json"`)
+		report:=map[string]any{"product": "SentinelGuard", "version": appVersion, "exportedAt": time.Now(), "status": st, "findings": fs, "skippedPaths": skippedPaths, "notice": "These findings may be false positives. Defender scans are separate from heuristic scans."}
         if s.active!=nil {report["liveProtection"]=s.active.snapshot()}
+        if r.URL.Query().Get("redact")=="1"{
+            masked,err:=v42RedactReport(report)
+            if err!=nil{apiError(w,500,err);return}
+            sendJSON(w,masked);return
+        }
         sendJSON(w,report)
 	})
 	mux.HandleFunc("/api/exit", func(w http.ResponseWriter, r *http.Request) {
@@ -406,6 +448,7 @@ func (s *Server) routes() http.Handler {
 		go func() { time.Sleep(200 * time.Millisecond); os.Exit(0) }()
 	})
 	registerActiveRoutes(mux,s)
+    registerLaunchRoutes(mux,s)
 	return s.secure(mux)
 }
 
@@ -422,17 +465,22 @@ func main() {
 		log.Fatal(err)
 	}
 	token := base64.RawURLEncoding.EncodeToString(rnd)
-	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	listener, err := net.Listen("tcp4", "127.0.0.1:17654")
 	if err != nil {
-		reportStartupError(err.Error())
+		reportStartupError("Cannot bind SentinelGuard private loopback port 17654; close other instances. "+err.Error())
 		log.Fatal(err)
 	}
 	server := &Server{app: newApp(vault), token: token, address: listener.Addr().String()}
     if edition=="integrated" || edition=="active" {
         server.active=newActiveMonitor(vault)
-        browserSecret:=make([]byte,32)
-        if _,err:=rand.Read(browserSecret);err!=nil {log.Fatal(err)}
-        server.extensionToken=base64.RawURLEncoding.EncodeToString(browserSecret)
+        var pairErr error
+        server.extensionToken,server.pairPersisted,pairErr=loadProtectedPairingToken()
+        if pairErr!=nil {
+            log.Printf("Browser pairing is session-only: %v",pairErr)
+            browserSecret:=make([]byte,32)
+            if _,err:=rand.Read(browserSecret);err!=nil{log.Fatal(err)}
+            server.extensionToken=base64.RawURLEncoding.EncodeToString(browserSecret)
+        }
         server.active.start()
     }
 	url := "http://" + server.address + "/app/?token=" + token

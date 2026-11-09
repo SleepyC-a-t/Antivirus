@@ -1,0 +1,68 @@
+name: SentinelGuard security incident — OS process trace (review only)
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/sentinelguard-v43-process-forensics.yml"
+      - "ci/v43_*"
+      - "SentinelLite_Source/SentinelLite/src/launch_metadata_windows.go"
+      - "SentinelLite_Source/SentinelLite/src/v42_structured_analyzers.go"
+concurrency:
+  group: sentinelguard-forensics-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  windows-os-trace:
+    runs-on: windows-latest
+    timeout-minutes: 50
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Check out reviewed patched head
+        uses: actions/checkout@v4
+        with:
+          path: patched
+      - name: Check out known affected historical release
+        uses: actions/checkout@v4
+        with:
+          repository: SleepyC-a-t/Antivirus
+          ref: c1770d9dba6ba57604e89526e29f545bf293589d
+          path: old
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: patched/SentinelLite_Source/SentinelLite/src/go.mod
+          cache: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build both historical and patched Windows executables without running either
+        run: |
+          New-Item -ItemType Directory -Force -Path process-forensics | Out-Null
+          foreach ($tag in @('old','patched')) {
+            Push-Location "$tag/SentinelLite_Source/SentinelLite/src"
+            try {
+              $exe=Join-Path $env:RUNNER_TEMP "SentinelGuard-$tag-FORENSICS-DO-NOT-RUN.exe"
+              go mod tidy
+              if ($LASTEXITCODE -ne 0) {throw "$tag dependency resolution failed"}
+              go build -trimpath -ldflags '-s -w -H windowsgui' -o $exe .
+              if ($LASTEXITCODE -ne 0) {throw "$tag Windows build failed"}
+              $hash=(Get-FileHash -Algorithm SHA256 $exe).Hash.ToLowerInvariant()
+              "$tag build_sha256=$hash" | Add-Content -Encoding ascii (Join-Path $env:GITHUB_WORKSPACE 'process-forensics/build-hashes.txt')
+            } finally {Pop-Location}
+          }
+      - name: Confirm trusted Windows OS and instrumentation only
+        run: |
+          Write-Host "Old=$((git -C old rev-parse HEAD))"
+          Write-Host "Patched=$((git -C patched rev-parse HEAD))"
+          # No downloaded malware, no Defender disabling, no external EXEs run.
+          & patched/ci/v43_trace.ps1 -Baseline "$PWD/old" -Patched "$PWD/patched" -Output "$PWD/process-forensics"
+      - name: Upload ETW data, decoded events, commands (if present), and counters
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SentinelGuard-Process-Forensics-REVIEW-ONLY
+          path: process-forensics/
+          retention-days: 30
+          if-no-files-found: warn

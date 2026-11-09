@@ -100,10 +100,48 @@ func (a *App) runDefender(ctx context.Context, mode, custom string) error {
 		}
 		a.setCurrent(fmt.Sprintf("Microsoft Defender scanning %s (%d/%d). Detailed progress is unavailable.", root, i+1, len(roots)))
 		output := &cappedBuffer{max: 8 * 1024 * 1024}
-		cmd := exec.CommandContext(ctx, exe, "-Scan", "-ScanType", "3", "-File", root, "-DisableRemediation")
-		cmd.Stdout = output
-		cmd.Stderr = output
-		runErr := cmd.Run()
+        // Fail CLOSED if the OS job cannot be created/configured.
+        // Stop on the root helper also closes the job, killing descendants;
+        // Microsoft's separately managed antivirus service may continue.
+        job,jobErr:=newDefenderJob()
+        if jobErr!=nil{return fmt.Errorf("cannot isolate Defender helper: %w",jobErr)}
+        cmd:=exec.CommandContext(ctx,exe,"-Scan","-ScanType","3","-File",root,"-DisableRemediation")
+        configureDefenderBackground(cmd)
+        cmd.Stdout=output
+        cmd.Stderr=output
+        if err:=cmd.Start();err!=nil{
+            job.close()
+            return fmt.Errorf("could not start Defender helper: %w",err)
+        }
+        // Child processes are observed by Toolhelp32, not self-reported here.
+        // The helper is created suspended/assigned to its Job Object before
+        // the primary thread is resumed in the hardened Windows launcher.
+        if err:=job.assign(cmd.Process.Pid);err!=nil{
+            _ = cmd.Process.Kill()
+            _ = cmd.Wait()
+            job.close()
+            return fmt.Errorf("Defender helper could not be placed in a kill-on-close job: %w",err)
+        }
+        // No Defender helper instruction has run before Job assignment.
+        if err:=resumeDefenderProcess(cmd.Process.Pid);err!=nil{
+            _=cmd.Process.Kill()
+            _=cmd.Wait()
+            job.close()
+            return fmt.Errorf("Defender helper could not be resumed safely: %w",err)
+        }
+        // cmd.Wait alone may block if descendants inherit stdout/stderr.
+        // Closing the kill-on-close Job Object immediately on cancellation
+        // terminates its assigned helper tree before waiting for pipe closure.
+        jobWaitDone:=make(chan struct{})
+        go func(){
+            select {
+            case <-ctx.Done(): job.close()
+            case <-jobWaitDone:
+            }
+        }()
+        runErr:=cmd.Wait()
+        close(jobWaitDone)
+        job.close()
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}

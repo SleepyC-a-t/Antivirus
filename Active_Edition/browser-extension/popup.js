@@ -5,7 +5,7 @@ const feedEl=document.getElementById("feed");
 function validate(text){
   const u=new URL(text.trim());
   if(u.protocol!=="http:" || u.hostname!=="127.0.0.1" ||
-     u.pathname!=="/api/active/extension-status" || !/^[A-Za-z0-9_-]{40,60}$/.test(u.searchParams.get("pair")||""))
+     u.pathname!=="/api/active/extension-challenge" || !/^[A-Za-z0-9_-]{40,60}$/.test(u.searchParams.get("pair")||""))
     throw Error("Invalid SentinelGuard Active pairing link");
   return {endpoint:u.origin+u.pathname,token:u.searchParams.get("pair")};
 }

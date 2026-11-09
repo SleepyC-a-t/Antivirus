@@ -1,0 +1,38 @@
+SentinelGuard 4.2 — independent Windows Sandbox Process Monitor filter specification
+==================================================================================
+
+This is a HUMAN-READABLE filter specification, not a native Procmon .PMC file.
+The native .PMC format is owned by Sysinternals and must be saved using the
+official Procmon user interface after entering these filters. Do not rename
+this .txt to .PMC or claim it is automatically importable.
+
+1. Open official signed Microsoft Sysinternals Process Monitor inside the
+   disposable disconnected Windows Sandbox. Verify its signature.
+2. Capture the unfiltered 20-second baseline before opening SentinelGuard.
+   Keep the raw PML, because filters can hide other unexpected processes.
+3. Choose Filter (Ctrl+L). Set:
+   - Operation | is | Process Create | Include
+   - Process Name | is | SentinelGuard-4.2.exe | Include
+   Then click Add and OK. Process Create events are ordinarily attributed to
+   the *parent* which initiated creation; the child image and command line
+   are in the event details. Validate against Procmon's Process Tree rather
+   than assuming every Process Name represents a child.
+4. If the app is launched from a lab harness instead of its GUI, substitute
+   the known harness image name and parent PID. For each Process Create event,
+   inspect Event Properties: parent PID, child PID, full child executable path,
+   command line, timestamp and result. Mark unknown/blank fields as missing.
+5. For *independent* child tracking, use Tools > Process Tree and confirm
+   the parent-child relationship, including short-lived children. Also
+   inspect cmd.exe, powershell.exe, pwsh.exe, conhost.exe, rundll32.exe and
+   every other process image—not only the expected names.
+6. Save filters from File > Save Configuration (native .PMC if your Procmon
+   edition supports that action), keep an unfiltered native .PML and export a
+   sanitized CSV. Do not publish personal paths, command-line secrets or
+   sample hashes from the raw trace.
+7. Record exactly which filters and Procmon version were used. Repeat both
+   a completed heuristic scan and an interrupted/cancelled heuristic scan.
+   An empty filtered result is NOT proof that no process launched; validate
+   the unfiltered PML, process tree and app's sampled Toolhelp32 tripwire.
+
+Manual field tests are for an independent operator. The SECURITY HOLD on
+the affected user's personal Windows computer remains in force.

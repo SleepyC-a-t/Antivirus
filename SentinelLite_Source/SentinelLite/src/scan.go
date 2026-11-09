@@ -42,6 +42,17 @@ type SkippedPath struct {
 // explicitly counted in status.skipLogOmitted, not silently discarded.
 const maxSkippedPathRecords = 100000
 
+// ObservedChildProcess is a sampled OS process record, not a claim that the
+// scanner launched it. A PID may be reused and short-lived children can evade polling.
+type ObservedChildProcess struct {
+    PID uint32 `json:"pid"`
+    ParentPID uint32 `json:"parentPid"`
+    Image string `json:"image"`
+    FirstSeen time.Time `json:"firstSeen"`
+}
+
+const maxObservedChildren = 128
+
 type Status struct {
 	Active   bool      `json:"active"`
 	Mode     string    `json:"mode"`
@@ -49,6 +60,14 @@ type Status struct {
 	Files    int64     `json:"files"`
 	Skipped  int64     `json:"skipped"`
     Resources ScanResourceUsage `json:"resources"`
+    ChildProcessesObserved int64 `json:"childProcessesObserved"`
+    ChildProcessImages []string `json:"childProcessImages"`
+    ChildProcessEntries []ObservedChildProcess `json:"childProcessEntries"`
+    ChildProcessOmitted int64 `json:"childProcessOmitted"`
+    ChildProcessSampleCount int64 `json:"childProcessSampleCount"`
+    ChildProcessMonitoringAvailable bool `json:"childProcessMonitoringAvailable"`
+    ChildProcessMonitoringError string `json:"childProcessMonitoringError,omitempty"`
+    ChildProcessWarning string `json:"childProcessWarning,omitempty"`
 	SkipLogOmitted int64 `json:"skipLogOmitted"`
 	Findings int       `json:"findings"`
 	Omitted int64 `json:"omitted"`
@@ -70,6 +89,7 @@ type App struct {
 	skipLogOmitted int64
     resources ScanResourceUsage
     resourceDone chan struct{}
+    childSeen map[uint32]ObservedChildProcess
     lastResourceCPU float64
     lastResourceAt time.Time
     sumCPUPercent float64
@@ -113,6 +133,8 @@ func (a *App) snapshot() (Status, []Finding) {
 	s.Omitted = atomic.LoadInt64(&a.omitted)
 	s.SkipLogOmitted = a.skipLogOmitted
     s.Resources = a.resources
+    s.ChildProcessImages = append([]string(nil),s.ChildProcessImages...)
+    s.ChildProcessEntries = append([]ObservedChildProcess(nil),s.ChildProcessEntries...)
 	fs := make([]Finding, 0, len(a.order))
 	for _, id := range a.order {
 		fs = append(fs, a.findings[id])
@@ -162,6 +184,8 @@ func (a *App) stop() {
 		c()
 	}
 }
+// Child-process accounting is exclusively OS-observed, not manually
+// incremented by Defender or Scan & Run code paths.
 func (a *App) incrFiles()          { atomic.AddInt64(&a.files, 1) }
 // Record skipped paths and reasons for the JSON report. The count is always
 // complete even if an extreme number of records exhaust the safety cap.
@@ -182,6 +206,11 @@ func (a *App) skippedSnapshot() []SkippedPath {
 }
 func (a *App) setCurrent(p string) { a.mu.Lock(); a.status.Current = p; a.mu.Unlock() }
 
+// The normal value enumerates all fixed and removable drives. Tests can
+// temporarily substitute an isolated inert fixture tree to exercise the
+// EXACT full-scan dispatch without touching a physical machine's drives.
+var fullScanDriveRoots = fixedAndRemovableDrives
+
 func scanRoots(mode, custom string) ([]string, error) {
 	if mode == "custom" {
 		if strings.TrimSpace(custom) == "" {
@@ -197,7 +226,7 @@ func scanRoots(mode, custom string) ([]string, error) {
 		return []string{p}, nil
 	}
 	if mode == "full" {
-		roots := fixedAndRemovableDrives()
+		roots := fullScanDriveRoots()
 		if len(roots) == 0 {
 			return nil, errors.New("no local drives found")
 		}
@@ -455,6 +484,8 @@ func inspectFileDetailed(p string, info os.FileInfo, onReadError func(string)) *
 		if stage9InspectableExtension(ext) || stage10InspectableExtension(ext) || stage11InspectableExtension(ext) || stage12InspectableExtension(ext) {
 			maxRead = 512 * 1024
 		}
+        // Bounded PDF action token review (object streams still not parsed).
+        if ext==".pdf"{maxRead=512*1024}
         // Keep the Stage 12 advisory checks cheap on large photo/text libraries.
         // No benefit comes from decoding 512 KiB of every ordinary JPEG.
         switch ext {
@@ -506,8 +537,10 @@ func inspectFileDetailed(p string, info os.FileInfo, onReadError func(string)) *
 				}
 				if ext == ".lnk" {
 					inspectValidatedShortcut(buf, &score, &reasons)
+                    inspectV42LNK(buf,&score,&reasons)
 				}
-				if isDocumentOrImage(ext) && isPEHeader(buf) {
+				if ext==".pdf"{inspectV42PDF(buf,&score,&reasons)}
+                if isDocumentOrImage(ext) && isPEHeader(buf) {
 					add(80, "Valid PE executable header disguised as a document or image")
 				}
 				inspectPEFileMetadata(buf, ext, &score, &reasons)
@@ -516,6 +549,12 @@ func inspectFileDetailed(p string, info os.FileInfo, onReadError func(string)) *
 				inspectStage11Content(name, ext, buf, &score, &reasons)
                 inspectStage12Content(name, ext, buf, &score, &reasons)
                 _ = fh.Close()
+                if ext==".exe"||ext==".dll"||ext==".sys"||ext==".scr"||ext==".cpl"{
+                    inspectV42PE(p,info,&score,&reasons)
+                }
+                if (ext==".docm"||ext==".xlsm"||ext==".pptm") && info.Size()<=128*1024*1024{
+                    inspectV42MacroPackage(p,ext,&score,&reasons)
+                }
             } else if onReadError!=nil {
                 onReadError("file content could not be opened: "+err.Error())
             }

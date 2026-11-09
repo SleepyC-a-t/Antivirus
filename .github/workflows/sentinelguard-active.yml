@@ -1,4 +1,4 @@
-name: SentinelGuard 4.0 — Browser companion validation
+name: SentinelGuard 4.2 — Browser companion validation
 on:
   pull_request:
     paths:
@@ -28,9 +28,45 @@ jobs:
             if(!m.permissions.includes('declarativeNetRequest'))throw Error('No declarativeNetRequest permission');
           }
           JS
+      - name: Check 4.2 version parity and removed contradictory README
+        run: |
+          node - <<'JS'
+          const fs = require('node:fs');
+          const root = 'Active_Edition/';
+          const c = JSON.parse(fs.readFileSync(root+'browser-extension/manifest.json', 'utf8'));
+          const f = JSON.parse(fs.readFileSync(root+'browser-extension-firefox/manifest.json', 'utf8'));
+          for (const m of [c,f]) {
+            if(m.version !== '4.2.0' || !m.name.includes('4.2') || !m.description.includes('4.2'))
+              throw Error('Companion manifest inconsistent with release 4.2');
+          }
+          if(f.browser_specific_settings?.gecko?.id !== 'sentinelguard-4.2@local.invalid')
+            throw Error('Firefox ID not updated');
+          const readme = fs.readFileSync(root+'README.md', 'utf8');
+          if(!readme.includes('SentinelGuard 4.2'))
+            throw Error('Deployment README has incorrect version');
+          if(/pairing must be renewed after restarting/i.test(readme))
+            throw Error('Contradictory pairing persistence instructions');
+          const go = fs.readFileSync('SentinelLite_Source/SentinelLite/src/main.go', 'utf8');
+          if(!go.includes('const appVersion = "4.2"') || !go.includes('const appEdition = "SentinelGuard " + appVersion'))
+            throw Error('Runtime app edition/version constants mismatched 4.2');
+          JS
+      - name: Validate embedded desktop UI JavaScript and safety indicators
+        run: |
+          node - <<'JS'
+          const fs=require('node:fs'),vm=require('node:vm');
+          const ui=fs.readFileSync('SentinelLite_Source/SentinelLite/src/ui.html','utf8');
+          const scripts=[...ui.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/gi)];
+          if(scripts.length!==1) throw Error('Expected one embedded desktop script, got '+scripts.length);
+          new vm.Script(scripts[0][1],{filename:'ui.html'});
+          for(const required of ['securityHoldBanner','childProcessesObserved','childProcessImages','childProcessAlert','appEditionHeader','appVersionBadge']){
+            if(!ui.includes('id="'+required+'"'))throw Error('Required UI field missing: '+required);
+          }
+          if(/SentinelGuard 4\.(?!2\b)\d+/i.test(ui))throw Error('Stale SentinelGuard 4.x UI edition');
+          JS
       - name: JavaScript syntax checks
         run: |
           node --check Active_Edition/browser-extension/background.js
           node --check Active_Edition/browser-extension/popup.js
           node --check Active_Edition/browser-extension-firefox/background.js
           node --check Active_Edition/browser-extension-firefox/popup.js
+          node Active_Edition/browser-extension/browser_rules.test.cjs
