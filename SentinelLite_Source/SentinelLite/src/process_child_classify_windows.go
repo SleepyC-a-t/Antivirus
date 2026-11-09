@@ -3,14 +3,11 @@
 package main
 
 import (
-    "errors"
     "fmt"
-    "os"
     "path/filepath"
     "runtime"
     "strings"
     "sync"
-    "syscall"
     "unsafe"
 
     "golang.org/x/sys/windows"
@@ -97,6 +94,3 @@ func classifyObservedChildProcess(child ObservedChildProcess) ObservedChildProce
     return child
 }
 
-var _=errors.New
-var _=os.Getpid
-var _=syscall.Errno(0)
