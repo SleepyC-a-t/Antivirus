@@ -186,22 +186,7 @@ func (a *App) sampleChildProcesses(done <-chan struct{}) {
     a.status.ChildProcessSampleCount++
     if a.childSeen==nil{a.childSeen=make(map[observedChildIdentity]ObservedChildProcess)}
     for _,child:=range newChildren{
-        key:=observedChildIdentity{PID:child.PID,CreationTimeTicks:child.CreationTimeTicks}
-        if _,exists:=a.childSeen[key];exists{continue}
-        a.childSeen[key]=child
-        a.status.ChildProcessesObserved++
-        if child.Classification==childExpectedWebView{
-            a.status.ChildProcessesExpected++
-        } else {
-            // Unverified WebView lookalikes are counted as unexpected until
-            // positive identity checks succeed. Never allowlist the name.
-            a.status.ChildProcessesUnexpected++
-        }
-        if len(a.status.ChildProcessEntries)<maxObservedChildren{
-            a.status.ChildProcessEntries=append(a.status.ChildProcessEntries,child)
-        }else{
-            a.status.ChildProcessOmitted++
-        }
+        a.recordClassifiedChildLocked(child)
     }
     names:=make(map[string]struct{})
     for _,child:=range a.status.ChildProcessEntries{
@@ -211,15 +196,37 @@ func (a *App) sampleChildProcesses(done <-chan struct{}) {
     for name:=range names{a.status.ChildProcessImages=append(a.status.ChildProcessImages,name)}
     sort.Strings(a.status.ChildProcessImages)
 
-    if strings.HasPrefix(a.status.Mode,"heuristic:"){
-        if a.status.ChildProcessesUnexpected>0{
-            a.status.ChildProcessWarning="WARNING: Unexpected or unverified direct child process observed during heuristic scanning. Review the child identity, runtime path, and signature; the scanner does not intentionally execute inspected files."
-        } else if a.status.ChildProcessMonitoringError!=""{
-            a.status.ChildProcessWarning="WARNING: Windows process monitoring was incomplete; process safety is unknown."
-        } else {
-            // The verified WebView2 UI child is still recorded in the report,
-            // but it does not by itself trigger the scanner-process warning.
-            a.status.ChildProcessWarning=""
-        }
+    a.reconcileChildWarningLocked()
+
+}
+
+// The following two helpers only mutate the in-memory scan report. Keeping
+// them separate allows a deterministic test to prove that an expected UI
+// child is still counted but does not trigger an execution-warning.
+func (a *App) recordClassifiedChildLocked(child ObservedChildProcess) {
+    key:=observedChildIdentity{PID:child.PID,CreationTimeTicks:child.CreationTimeTicks}
+    if _,exists:=a.childSeen[key];exists{return}
+    a.childSeen[key]=child
+    a.status.ChildProcessesObserved++
+    if child.Classification==childExpectedWebView{
+        a.status.ChildProcessesExpected++
+    } else {
+        a.status.ChildProcessesUnexpected++
+    }
+    if len(a.status.ChildProcessEntries)<maxObservedChildren{
+        a.status.ChildProcessEntries=append(a.status.ChildProcessEntries,child)
+    } else {
+        a.status.ChildProcessOmitted++
+    }
+}
+
+func (a *App) reconcileChildWarningLocked(){
+    if !strings.HasPrefix(a.status.Mode,"heuristic:"){return}
+    if a.status.ChildProcessesUnexpected>0{
+        a.status.ChildProcessWarning="WARNING: Unexpected or unverified direct child process observed during heuristic scanning. Review the child identity, runtime path, and signature; the scanner does not intentionally execute inspected files."
+    }else if a.status.ChildProcessMonitoringError!=""{
+        a.status.ChildProcessWarning="WARNING: Windows process monitoring was incomplete; process safety is unknown."
+    }else{
+        a.status.ChildProcessWarning=""
     }
 }
