@@ -14,6 +14,7 @@ import (
 // bounded, read-only and never execute a scanned file. Ordinary JSON reports
 // do not reopen any findings or attach these additional metadata fields.
 const maxExportDiagnostics = 64
+const maxExportSignatureChecks = 12
 
 type ScanFileDiagnostic struct {
     FindingID string `json:"findingId"`
@@ -67,7 +68,7 @@ func filenameLocationIndicators(f Finding) []string {
     return indicators
 }
 
-func diagnosePEForExport(path string, size int64) *PEExportDiagnostic {
+func diagnosePEForExport(path string, size int64, checkSignature bool) *PEExportDiagnostic {
     // Avoid expensive parsing on huge or malformed binaries. The native
     // signature check is already bounded and runs only for opted-in exports.
     if size<512||size>64*1024*1024{return nil}
@@ -118,11 +119,13 @@ func diagnosePEForExport(path string, size int64) *PEExportDiagnostic {
     }
     // This is the existing in-process native WinVerifyTrust implementation:
     // it does NOT invoke PowerShell or run the target file.
-    if sig,_:=verifyPESignature(path);sig!=""{d.SignatureStatus=sig}
+    if checkSignature {
+        if sig,_:=verifyPESignature(path);sig!=""{d.SignatureStatus=sig}
+    } else { d.SignatureStatus="Not checked (bounded diagnostic export signature budget)" }
     return d
 }
 
-func diagnoseFindingForExport(f Finding) ScanFileDiagnostic {
+func diagnoseFindingForExport(f Finding, checkSignature bool) ScanFileDiagnostic {
     d:=ScanFileDiagnostic{
         FindingID:f.ID,Status:"unavailable",
         Extension:strings.ToLower(filepath.Ext(f.Name)),
@@ -175,7 +178,7 @@ func diagnoseFindingForExport(f Finding) ScanFileDiagnostic {
     }
     ext:=d.Extension
     if d.FileType=="Windows PE" && (ext==".exe"||ext==".dll"||ext==".sys"||ext==".scr"||ext==".cpl"){
-        d.PE=diagnosePEForExport(f.Path,info.Size())
+        d.PE=diagnosePEForExport(f.Path,info.Size(),checkSignature)
     }
     return d
 }
@@ -184,8 +187,10 @@ func collectExportDiagnostics(findings []Finding)([]ScanFileDiagnostic,int){
     limit:=len(findings)
     if limit>maxExportDiagnostics{limit=maxExportDiagnostics}
     out:=make([]ScanFileDiagnostic,0,limit)
-    for _,f:=range findings[:limit]{
-        out=append(out,diagnoseFindingForExport(f))
+    for i,f:=range findings[:limit]{
+        // Avoid a long export stall when many flagged binaries would each
+        // require an offline native certificate verification.
+        out=append(out,diagnoseFindingForExport(f,i<maxExportSignatureChecks))
     }
     return out,len(findings)-limit
 }
