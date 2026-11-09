@@ -49,6 +49,21 @@ type ObservedChildProcess struct {
     ParentPID uint32 `json:"parentPid"`
     Image string `json:"image"`
     FirstSeen time.Time `json:"firstSeen"`
+    // A process image path is identifying; optional report redaction applies.
+    ExecutablePath string `json:"executablePath,omitempty"`
+    // Native GetProcessTimes tick count prevents PID reuse from silently
+    // merging two different observed processes within one scan.
+    CreationTimeTicks uint64 `json:"creationTimeTicks,omitempty"`
+    IdentityError string `json:"identityError,omitempty"`
+    SignatureStatus string `json:"signatureStatus,omitempty"`
+    // expected-webview2, unverified-webview2, or unexpected.
+    Classification string `json:"classification"`
+    ClassificationReason string `json:"classificationReason"`
+}
+
+type observedChildIdentity struct {
+    PID uint32
+    CreationTimeTicks uint64
 }
 
 const maxObservedChildren = 128
@@ -61,6 +76,8 @@ type Status struct {
 	Skipped  int64     `json:"skipped"`
     Resources ScanResourceUsage `json:"resources"`
     ChildProcessesObserved int64 `json:"childProcessesObserved"`
+    ChildProcessesExpected int64 `json:"childProcessesExpected"`
+    ChildProcessesUnexpected int64 `json:"childProcessesUnexpected"`
     ChildProcessImages []string `json:"childProcessImages"`
     ChildProcessEntries []ObservedChildProcess `json:"childProcessEntries"`
     ChildProcessOmitted int64 `json:"childProcessOmitted"`
@@ -89,7 +106,7 @@ type App struct {
 	skipLogOmitted int64
     resources ScanResourceUsage
     resourceDone chan struct{}
-    childSeen map[uint32]ObservedChildProcess
+    childSeen map[observedChildIdentity]ObservedChildProcess
     lastResourceCPU float64
     lastResourceAt time.Time
     sumCPUPercent float64
