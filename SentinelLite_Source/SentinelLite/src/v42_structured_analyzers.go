@@ -10,6 +10,7 @@ import (
  "math"
  "os"
  "path/filepath"
+ "regexp"
  "strings"
  "unicode/utf16"
 )
