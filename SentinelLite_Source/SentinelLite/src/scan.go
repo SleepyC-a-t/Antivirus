@@ -482,7 +482,7 @@ func inspectFileDetailed(p string, info os.FileInfo, onReadError func(string)) *
 		add(22, "Executable or library within roaming application data (can be legitimate)")
 	}
 
-	inspectContent := isThreatScriptExtension(ext) || ext==".html" || ext==".htm" || ext==".sys" || scriptExtensions[ext] || executableExtensions[ext] || isDocumentOrImage(ext) || ext == ".lnk" || isZIPContainer(ext) || riskExtensions[ext] || stage9InspectableExtension(ext) || stage10InspectableExtension(ext) || stage11InspectableExtension(ext) || stage12InspectableExtension(ext) || score > 0
+	inspectContent := isThreatScriptExtension(ext) || ext==".html" || ext==".htm" || ext==".sys" || scriptExtensions[ext] || executableExtensions[ext] || isDocumentOrImage(ext) || ext == ".lnk" || isZIPContainer(ext) || riskExtensions[ext] || stage9InspectableExtension(ext) || stage10InspectableExtension(ext) || stage11InspectableExtension(ext) || stage12InspectableExtension(ext) || stage13InspectableExtension(ext) || score > 0
 	if inspectContent {
 		if isZIPContainer(ext) {
             if info.Size() <= 512*1024*1024 {
@@ -498,7 +498,7 @@ func inspectFileDetailed(p string, info os.FileInfo, onReadError func(string)) *
 		if isThreatScriptExtension(ext) || ext==".html" || ext==".htm" {
 			maxRead = 2 * 1024 * 1024
 		}
-		if stage9InspectableExtension(ext) || stage10InspectableExtension(ext) || stage11InspectableExtension(ext) || stage12InspectableExtension(ext) {
+		if stage9InspectableExtension(ext) || stage10InspectableExtension(ext) || stage11InspectableExtension(ext) || stage12InspectableExtension(ext) || stage13InspectableExtension(ext) {
 			maxRead = 512 * 1024
 		}
         // Bounded PDF action token review (object streams still not parsed).
@@ -565,6 +565,7 @@ func inspectFileDetailed(p string, info os.FileInfo, onReadError func(string)) *
 				inspectStage10Content(name, ext, buf, &score, &reasons)
 				inspectStage11Content(name, ext, buf, &score, &reasons)
                 inspectStage12Content(name, ext, buf, &score, &reasons)
+                inspectStage13Content(name, ext, buf, &score, &reasons)
                 _ = fh.Close()
                 if ext==".exe"||ext==".dll"||ext==".sys"||ext==".scr"||ext==".cpl"{
                     inspectV42PE(p,info,&score,&reasons)
@@ -665,7 +666,7 @@ func inspectScript(buf []byte, score *int, reasons *[]string) {
 		add(78, "Attempts to weaken Microsoft Defender protection")
 	}
 	if strings.Contains(lower, "certutil") && strings.Contains(lower, "-urlcache") {
-		add(46, "Uses certutil to retrieve content from a URL")
+		add(18, "Certutil URL transfer alone is a weak administrative signal; corroboration required")
 	}
 	if strings.Contains(lower, "schtasks") && strings.Contains(lower, "/create") && (strings.Contains(lower, "powershell") || strings.Contains(lower, "wscript")) {
 		add(55, "Creates a scheduled task launching a script interpreter")
