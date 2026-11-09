@@ -83,7 +83,7 @@ func inspectArchiveEntriesLimited(files []*zip.File,depth int,budget *int64,insp
   // The harmless EICAR test signature may be inside *any* archive
   // entry, including eicar.com. Do not restrict detection by extension.
   exactEICARCandidate:=file.UncompressedSize64>=68&&file.UncompressedSize64<=128
-  if !nested && !exactEICARCandidate && !scriptExtensions[ext] && !isThreatScriptExtension(ext) && ext!=".lnk" && !isDocumentOrImage(ext) && !stage9InspectableExtension(ext) && !stage10InspectableExtension(ext) && !stage11InspectableExtension(ext) && !stage12InspectableExtension(ext){continue}
+  if !nested && !exactEICARCandidate && !scriptExtensions[ext] && !isThreatScriptExtension(ext) && ext!=".lnk" && !isDocumentOrImage(ext) && !stage9InspectableExtension(ext) && !stage10InspectableExtension(ext) && !stage11InspectableExtension(ext) && !stage12InspectableExtension(ext) && !stage13InspectableExtension(ext){continue}
   // Reject decompression bombs: cap entry size, compressed bytes,
   // expansion ratio, recursion depth and a global archive read budget.
   if file.CompressedSize64>16*1024*1024 {continue}
@@ -135,6 +135,9 @@ func inspectArchiveEntriesLimited(files []*zip.File,depth int,budget *int64,insp
    }
    if stage12InspectableExtension(ext) || isThreatScriptExtension(ext) {
     inspectStage12Content(filepath.Base(file.Name),ext,buf,&entryScore,&entryReasons)
+   }
+   if stage13InspectableExtension(ext) || ext==".cmd" || ext==".bat" || ext==".ps1" || ext==".psm1" {
+    inspectStage13Content(filepath.Base(file.Name),ext,buf,&entryScore,&entryReasons)
    }
    if entryScore>=40 {
     *score+=entryScore
