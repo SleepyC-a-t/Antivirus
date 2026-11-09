@@ -423,8 +423,18 @@ func (s *Server) routes() http.Handler {
 		skippedPaths := s.app.skippedSnapshot()
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Content-Disposition", `attachment; filename="SentinelGuard_v4.2_Scan_Findings.json"`)
-		report:=map[string]any{"product": "SentinelGuard", "version": appVersion, "exportedAt": time.Now(), "status": st, "findings": fs, "findingReasonsSummary": summarizeFindingReasons(fs), "reportKind": "manualScanFindings", "skippedPaths": skippedPaths, "notice": "These findings may be false positives. Defender scans are separate from heuristic scans."}
+		report:=map[string]any{"product": "SentinelGuard", "version": appVersion, "exportedAt": time.Now(), "status": st, "findings": fs, "findingReasonsSummary": summarizeFindingReasons(fs), "reportKind": "manualScanFindings", "skippedPaths": skippedPaths, "diagnosticsIncluded": false, "notice": "These findings may be false positives. Defender scans are separate from heuristic scans."}
         if s.active!=nil {report["liveProtection"]=s.active.snapshot()}
+        // Additional file evidence is opt-in PER EXPORT. Default reports
+        // never reread files or include the extra hash, signature or PE data.
+        if r.URL.Query().Get("diagnostics")=="1" {
+            entries,omitted:=collectExportDiagnostics(fs)
+            report["diagnosticsIncluded"]=true
+            report["diagnosticSchemaVersion"]=1
+            report["diagnosticData"]=entries
+            report["diagnosticsOmitted"]=omitted
+            report["diagnosticPrivacyNotice"]="Optional read-only snapshots of flagged files, gathered at export time. May include SHA-256, PE import/API indicators, signature status, sizes and timestamps. No executable code is run or raw file contents included. Share redacted exports and review metadata before forwarding."
+        }
         if r.URL.Query().Get("redact")=="1"{
             masked,err:=v42RedactReport(report)
             if err!=nil{apiError(w,500,err);return}
