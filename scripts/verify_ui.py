@@ -87,7 +87,7 @@ def main():
                 page.goto(url,wait_until="domcontentloaded")
                 page.wait_for_selector("#findingRows tr")
                 page.wait_for_timeout(100)
-                assert_equal(page.locator("#securityHoldBanner").count(),1,"Missing security hold")
+                assert_equal(page.locator("#releaseStatusNote").count(),1,"Missing current supplemental scanner notice")
                 assert_equal(page.locator("[data-appearance-option]").count(),3,"Appearance choices")
                 actual=page.evaluate("""() => ({
                   viewport:window.innerWidth,
@@ -132,7 +132,7 @@ def main():
                 if not page.locator("#scan").is_visible():
                     raise AssertionError("Scan controls became inaccessible in narrow/short window")
                 page.set_viewport_size({"width":width,"height":height})
-                print(f"PASS {width}x{height}: overflow, live window resize, theme persistence/system, security hold and JS")
+                print(f"PASS {width}x{height}: overflow, live window resize, theme persistence/system, supplemental scanner notice and JS")
                 context.close()
             browser.close()
     finally:
