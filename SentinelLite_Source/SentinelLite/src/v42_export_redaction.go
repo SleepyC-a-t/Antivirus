@@ -56,7 +56,17 @@ func v42RedactReport(source any)(any,error){
   switch typed:=value.(type){
   case map[string]any:
     out:=make(map[string]any,len(typed))
-    for field,val:=range typed{out[field]=scrub(val,field)}
+    // Skipped filesystem records include path+reason. Windows errors can
+    // embed a second path containing spaces or account/SID information.
+    // Normalize their text to a category; no path regex is sufficient.
+    _,hasPath:=typed["path"]
+    _,hasSkipReason:=typed["reason"]
+    for field,val:=range typed{
+      if hasPath&&hasSkipReason&&field=="reason"{
+        if raw,ok:=val.(string);ok{out[field]=v42SafeSkippedReason(raw);continue}
+      }
+      out[field]=scrub(val,field)
+    }
     return out
   case []any:
     out:=make([]any,len(typed))
