@@ -184,5 +184,9 @@ func TestV48PublicTechniqueInertSpectrum(t *testing.T){
     len(cases),tp,fn,fp,tn,tp+fn,tn+fp)
  // Survey mode: log all misses without failing baseline. Subsequent
  // strengthening tests in separate files enforce key rules explicitly.
- if len(cases)<70{t.Fatal("too small for broad inert behavior spectrum")}
+ if len(cases)!=75{t.Fatalf("immutable benchmark unexpectedly changed size: got %d want 75",len(cases))}
+ // A genuine regression in a labeled inert fixture must fail CI, not merely
+ // appear in verbose logs. These fixture labels are *expected alerts*;
+ // they do not establish that real-world maliciousness was detected.
+ if fn!=0||fp!=0{t.Fatalf("inert fixture regressions: missed expected alerts=%d, false alerts=%d",fn,fp)}
 }
