@@ -292,6 +292,80 @@ html[data-scheme="light"]{--ui-focus:var(--accent)}
   *,*::before,*::after{transition-duration:.001ms!important;animation-duration:.001ms!important;scroll-behavior:auto!important}
 }
 
+/* SentinelGuard 4.2 field UX refresh: fluid app-window use, one primary
+   document scrollbar and meaningful use of extra desktop width. */
+.wrap{max-width:none;width:100%;padding:clamp(12px,1.25vw,30px) clamp(12px,1.3vw,36px) 34px}
+.shell{grid-template-columns:clamp(260px,17vw,340px) minmax(0,1fr);gap:clamp(12px,1vw,23px)}
+.hero{margin:4px 0 16px}
+.hero h2{font-size:clamp(24px,1.85vw,34px)}
+.hero p{max-width:1050px}
+.top{margin-bottom:14px}
+.metric{border-radius:13px;box-shadow:none}
+.metric:first-child{border-top:2px solid var(--accent2)}
+.metric:nth-child(2){border-top:2px solid var(--warning)}
+.metric:nth-child(3){border-top:2px solid var(--blue)}
+.resource-panel{box-shadow:none}
+.resource-heading{border-bottom:1px solid var(--line);padding-bottom:9px}
+.resource-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
+.resource-tile{box-shadow:none;min-width:0}
+.resource-tile b{overflow-wrap:anywhere}
+.table-scroll{max-height:none;overflow-y:visible}
+.file-name,.file-path{max-width:min(55vw,1250px)}
+.content-panel{box-shadow:none}
+.tools{gap:10px}
+.tools .search{max-width:none}
+.export-options{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;font-size:12px;color:var(--sub)}
+.export-options label{display:inline-flex;align-items:center;gap:6px;white-space:normal;cursor:pointer}
+.export-options input{accent-color:var(--accent);width:15px;height:15px}
+.panel .info{line-height:1.5}
+.report-privacy{margin:10px 14px}
+@container scanner-main (min-width:900px){
+ .resource-grid{grid-template-columns:repeat(5,minmax(0,1fr))}
+ .tools .search{flex:1 1 320px;min-width:240px}
+}
+@container scanner-main (min-width:1280px){
+ .resource-grid{grid-template-columns:repeat(6,minmax(0,1fr))}
+}
+@media(min-width:2100px){
+ .shell>main{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(470px,1fr);grid-template-areas:"active active" "stats stats" "results resources" "summary summary";gap:15px;align-items:start}
+ #activeProtectionPanel{grid-area:active;margin-bottom:0}
+ .shell>main>.metrics{grid-area:stats;margin:0}
+ .shell>main>.resource-panel{grid-area:resources;margin:0}
+ .shell>main>.content-panel{grid-area:results;margin:0}
+ .shell>main>.summary{grid-area:summary;margin:0}
+ .resource-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+ .shell>main>.content-panel .table-scroll{overflow:visible}
+ .shell>main .file-name,.shell>main .file-path{max-width:min(45vw,1450px)}
+ .metric b{font-size:31px}
+}
+@media(min-width:2750px){
+ .shell>main{grid-template-columns:minmax(0,1.9fr) minmax(530px,1fr)}
+ .resource-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media(max-width:1120px){
+ .shell{grid-template-columns:minmax(235px,280px) minmax(0,1fr)}
+}
+@media(max-width:880px){
+ .shell{grid-template-columns:minmax(0,1fr)}
+ .wrap{padding-inline:12px}
+}
+@media(max-width:600px){
+ .export-options{width:100%;justify-content:flex-start;gap:6px 12px}
+ .export-options label{font-size:11px}
+ .table-scroll{overflow-x:auto;overflow-y:visible}
+ .file-name,.file-path{max-width:100%}
+ .report-privacy{margin:10px}
+}
+
+.scan-help{padding:11px 13px;margin-top:12px;border-radius:11px}
+.scan-help summary{font-size:12px;color:var(--text);font-weight:700;cursor:pointer;line-height:1.45}
+.scan-help p{font-size:12px;color:var(--sub);line-height:1.6;margin:10px 0 0}
+.scan-help p strong{color:var(--text)}
+.resource-help{border-top:1px solid var(--line);padding-top:9px;margin-top:10px}
+.resource-help summary{font-size:11px;font-weight:700;color:var(--sub);cursor:pointer}
+.resource-help .resource-foot{margin:10px 0 0}
+@media(min-width:2100px){.shell>aside .panel{padding:17px}.scan-help{margin-top:11px}}
+
 </style>
 </head>
 <body>
@@ -316,8 +390,7 @@ html[data-scheme="light"]{--ui-focus:var(--accent)}
     <p class="hint" id="engineHint">Bounded, read-only inspection of suspicious patterns; no file execution or automatic quarantine.</p>
     <div id="defenderNote" class="info warn hide"><strong>About Defender:</strong> Uses the documented <span class="kbd">-DisableRemediation</span> scan switch. Defender's *separate real-time protection* can still act under your existing Windows settings. Administrator access may be required.</div>
     <div class="progress"><div class="progress-head"><b id="statusText">Ready for a scan</b><span class="small muted" id="elapsed">Idle</span></div><div class="meter" id="meter"><i></i></div><div class="path-current" id="current">No scan in progress.</div><div class="error hide" id="error"></div></div>
-    <div class="info"><strong>Threat intelligence:</strong> Expanded context-aware analysis of scripts, suspicious shortcuts, archive contents, task XML, registry imports, structured configurations and extortion notes. Detections are advisory, not proof of infection. Benign examples and inactive code should be treated cautiously. <strong>Suspicious does not mean infected.</strong></div>
-    <div class="info"><strong>False positives are possible.</strong> Startup shortcuts, legitimate scripts, and software in AppData can all look unusual. Do not quarantine files you have not assessed.</div>
+    <details class="info scan-help"><summary>How findings are evaluated &amp; possible false positives</summary><p><strong>Threat intelligence:</strong> Context-aware review of scripts, shortcuts, archive contents, task XML, registry imports, configurations and extortion notes. These indicators are advisory, not proof of infection.</p><p><strong>False positives are possible.</strong> Startup shortcuts, legitimate scripts, debugging tools and software in AppData can appear suspicious. Do not quarantine a file without reviewing it.</p></details>
    </div></aside>
   <main>
     <section id="activeProtectionPanel" class="active-panel hide" aria-label="Live file protection">
@@ -359,17 +432,18 @@ html[data-scheme="light"]{--ui-focus:var(--accent)}
       </div>
       <p class="resource-foot" id="childProcessImages">No direct children observed.</p>
       <div class="info warn hide" id="childProcessAlert" role="alert"></div>
-      <p class="resource-foot" id="resourceNote">Measures SentinelGuard's own process during the scan (sampled every second), not total system resource use. Average and peak values remain visible when the scan completes. CPU is normalized to all logical processors; memory is the Windows working set. Windows Toolhelp32 samples direct children approximately four times per second and at scan completion. Expected UI children must have the exact WebView2 Runtime name, a path under a machine-managed WebView2 installation and a valid embedded Authenticode signature; the Microsoft signer is not independently extracted. Their appearance is still recorded, but does not alone trigger a scanner warning. Unknown paths, failed signatures and every other child remain warnings during heuristic scans. Very short-lived children can be missed; zero unexpected is NOT proof that no subprocess ran. Explicit Defender scans can create a helper, and the separate Defender service is not included.</p>
+      <details class="resource-help"><summary>Measurement details and monitoring limitations</summary><p class="resource-foot" id="resourceNote">Measures SentinelGuard's own process during the scan (sampled every second), not total system resource use. Average and peak values remain visible when the scan completes. CPU is normalized to all logical processors; memory is the Windows working set. Windows Toolhelp32 samples direct children approximately four times per second and at scan completion. Expected UI children must have the exact WebView2 Runtime name, a path under a machine-managed WebView2 installation and a valid embedded Authenticode signature; the Microsoft signer is not independently extracted. Their appearance is still recorded, but does not alone trigger a scanner warning. Unknown paths, failed signatures and every other child remain warnings during heuristic scans. Very short-lived children can be missed; zero unexpected is NOT proof that no subprocess ran. Explicit Defender scans can create a helper, and the separate Defender service is not included.</p></details>
     </section>
 
     <div class="panel content-panel"><div class="tabs"><button class="tab active" data-tab="findings">Findings</button><button class="tab" data-tab="vault">Quarantine <span id="vaultCount" class="small"></span></button></div>
-      <div id="findingsTab"><div class="tools"><input type="text" class="search" id="search" placeholder="Search name, path or reason…"><select id="filter"><option value="all">All severity levels</option><option value="High">High</option><option value="Elevated">Elevated</option><option value="Review">Review</option></select><button id="export">Export scan findings JSON</button><label class="small muted" for="scanExportRedact"><input id="scanExportRedact" type="checkbox" checked> Redact identifying paths</label></div>
+      <div id="findingsTab"><div class="tools"><input type="text" class="search" id="search" placeholder="Search name, path or reason…"><select id="filter"><option value="all">All severity levels</option><option value="High">High</option><option value="Elevated">Elevated</option><option value="Review">Review</option></select><button id="export">Export scan findings JSON</button><div class="export-options" role="group" aria-label="Scan report export options"><label for="scanExportRedact"><input id="scanExportRedact" type="checkbox" checked> Redact identifying paths</label><label for="scanExportDiagnostics"><input id="scanExportDiagnostics" type="checkbox"> Include optional diagnostic data</label></div></div>
         <details class="report-privacy" id="reportPrivacy"><summary>Privacy and JSON report contents — read before sharing</summary>
           <p><strong>Includes:</strong> product name and version; export timestamp (<code>exportedAt</code>); a notice; scan status (<code>active</code>, <code>mode</code>, <code>current</code> scan path, file/skipped/finding/omitted counts, scan start time, error text, and <code>resources</code> containing the CPU and memory current/average/peak values, sample count, and sample timestamp). <code>status.childProcessesObserved</code>, <code>childProcessesExpected</code>, <code>childProcessesUnexpected</code>, <code>childProcessImages</code>, <code>childProcessEntries</code>, <code>childProcessSampleCount</code>, <code>childProcessMonitoringError</code>, and <code>childProcessWarning</code> are sampled Toolhelp32 results. Entries may include process name, PID, parent PID, full executable path, creation-time ticks, identity errors, signature result and classification reasoning. Full paths and timestamps may identify your system; enable redaction before sharing. Very short-lived children may be missed. <code>current</code> and errors can contain full folder or drive paths.</p>
           <p><strong>Skipped paths:</strong> <code>skippedPaths</code> lists full filesystem paths and readable reasons (for example, access denied, reparse point, or an archive inspection limit). <code>status.skipLogOmitted</code> counts any records beyond the 100,000-entry memory safety limit. Unlike the previous version, a scan may contain more identifiable filesystem metadata even when no threats were found. Defender's separate engine does not expose per-file skip telemetry.</p>
           <p><strong>For each flagged item:</strong> a random per-scan finding ID, full <code>path</code>, filename, score, severity, detection engine, written explanations, file size, last-modified timestamp, and whether manual quarantine is available. A reason may mention filenames inside an archive or a detected threat name.</p>
           <p><strong>Personal information that may be revealed:</strong> your Windows account name inside <code>C:\Users\...</code> paths, drive letters, folder names, project/document names, and Windows account SID strings (for example in Recycle Bin paths). File names and timestamps may reveal what software or documents you use and when they were modified. The skipped-path list can additionally expose folders and private filenames unrelated to detected threats. The random finding ID is not a Windows user ID.</p>
-          <p><strong>Not included:</strong> actual file contents, passwords, browser cookies, local browser history, scan authentication token, or the quarantine vault inventory. File SHA-256 hashes viewed separately in the app are not part of this export. The report includes <code>findingReasonsSummary</code> with aggregate reason frequencies (no filenames), and <code>reportKind=manualScanFindings</code> to distinguish it from the unrelated live-protection export. IP addresses and email addresses are not separately collected, but could appear if you used them in a filename or path.</p>
+          <p><strong>Optional diagnostic data — OFF by default:</strong> When you tick <em>Include optional diagnostic data</em>, the report adds <code>diagnosticData</code> for up to 64 flagged files. It gathers read-only metadata at export time: file-type signature, extension, size, whether the file changed since the scan, existing scan SHA-256 where available, and for supported Windows executables the machine type, section count, relevant memory-operation imports, sampled entropy/overlay/packer signals, and locally checked embedded signature status. No executable, script, or macro is launched; no file bodies, passwords, code snippets, full import listings or browser history are exported. Large/changed/unavailable files may have partial diagnostics. Optional hashes can uniquely identify software. <strong>Redaction masks optional hashes, executable filenames and paths, but not all software characteristics.</strong> Inspect reports before sharing.</p>
+          <p><strong>Standard report:</strong> Contains no diagnostic collection, and no scanned file is reopened during export. The report includes aggregate <code>findingReasonsSummary</code> counts and <code>reportKind=manualScanFindings</code>. File hashes shown only in the separate detail modal are excluded unless the optional diagnostics checkbox is enabled. The app never automatically uploads report data.</p>
           <p><strong>Sharing:</strong> the report is downloaded to your device. SentinelGuard does not automatically upload it, send telemetry, or share it with the developers. Anyone you send the JSON to can read its paths and metadata. Inspect and redact private usernames, filenames and paths before uploading or forwarding it; redaction changes those fields for later comparisons.</p>
         </details>
         <div class="table-scroll"><table><thead><tr><th style="width:34px"><input class="check" type="checkbox" id="selectAll" title="Select visible files"></th><th>Finding</th><th>Severity</th><th>Engine</th><th>Action</th></tr></thead><tbody id="findingRows"></tbody></table><div id="emptyFindings" class="empty"><strong>No findings to display</strong>Start a scan to review suspicious files here.</div></div>
@@ -616,7 +690,14 @@ document.querySelectorAll('[name=engine]').forEach(e=>e.onchange=updateEngine);
 $('scan').onclick=start;$('cancel').onclick=async()=>{try{await api('/api/stop',{})}catch(e){toastError(e)}};
 $('windowsSecurity').onclick=async()=>{try{await api('/api/security',{})}catch(e){toastError(e)}};
 $('exit').onclick=async()=>{if(!confirm('Exit SentinelGuard? Scanning, if active, will stop.'))return;try{await api('/api/exit',{});document.body.innerHTML='<main style="max-width:600px;margin:100px auto;padding:30px;color:#cbd5e1;font:18px system-ui"><h2>SentinelGuard closed.</h2><p>You can close this browser tab. Restart SentinelGuard.exe to run another scan.</p></main>'}catch(e){toastError(e)}};
-$('export').onclick=()=>{const a=document.createElement('a');a.href='/api/report?token='+encodeURIComponent(TOKEN)+($('scanExportRedact').checked?'&redact=1':'');a.download='SentinelGuard_v4.2_Scan_Findings.json';document.body.appendChild(a);a.click();a.remove()};
+$('export').onclick=()=>{
+ const diagnostics=$('scanExportDiagnostics').checked, redacted=$('scanExportRedact').checked;
+ if(diagnostics && !redacted && !confirm('Optional diagnostic export may contain identifiable file paths, a SHA-256 hash, digital signature and executable characteristics. Nothing is uploaded automatically. Export an unredacted diagnostic report anyway?'))return;
+ const a=document.createElement('a');
+ a.href='/api/report?token='+encodeURIComponent(TOKEN)+(redacted?'&redact=1':'')+(diagnostics?'&diagnostics=1':'');
+ a.download=diagnostics?'SentinelGuard_v4.2_Scan_Diagnostics.json':'SentinelGuard_v4.2_Scan_Findings.json';
+ document.body.appendChild(a);a.click();a.remove();
+};
 $('refreshVault').onclick=refreshVault;document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>tabs(b.dataset.tab));
 async function poll(){await refresh();setTimeout(poll,1000)}
 poll();refreshVault();

@@ -78,7 +78,7 @@ def main():
     try:
         with sync_playwright() as p:
             browser=p.chromium.launch(headless=True)
-            for width,height in [(360,740),(768,900),(1024,480),(1024,768),(1440,900)]:
+            for width,height in [(360,740),(768,900),(1024,480),(1024,768),(1440,900),(1920,1080),(2560,1080),(3440,900)]:
                 context=browser.new_context(viewport={"width":width,"height":height},color_scheme="dark",
                                             reduced_motion="reduce")
                 page=context.new_page()
@@ -89,6 +89,25 @@ def main():
                 page.wait_for_timeout(100)
                 assert_equal(page.locator("#releaseStatusNote").count(),1,"Missing current supplemental scanner notice")
                 assert_equal(page.locator("[data-appearance-option]").count(),3,"Appearance choices")
+                assert_equal(page.locator("#scanExportDiagnostics").is_checked(),False,"Diagnostics must be opt-in")
+                assert_equal(page.locator("#scanExportRedact").is_checked(),True,"Privacy redaction must default ON")
+                if width>=2560:
+                    layout=page.evaluate("""() => ({
+                        shell:document.querySelector('.shell').getBoundingClientRect().width,
+                        main:document.querySelector('.shell>main').getBoundingClientRect().width,
+                        wrap:document.querySelector('.wrap').getBoundingClientRect().width,
+                        content:document.querySelector('.content-panel').getBoundingClientRect().width,
+                        resources:document.querySelector('.resource-panel').getBoundingClientRect().width,
+                        resourceRight:document.querySelector('.resource-panel').getBoundingClientRect().right,
+                        contentRight:document.querySelector('.content-panel').getBoundingClientRect().right
+                    })""")
+                    if layout["wrap"]<width-4 or layout["main"]<width*0.72:
+                        raise AssertionError(f"Wide window is artificially capped: {width}px {layout}")
+                    if layout["resourceRight"]>width+2 or layout["contentRight"]>width+2:
+                        raise AssertionError(f"Wide layout overflows: {layout}")
+                    if layout["content"]<layout["resources"]*1.15:
+                        raise AssertionError(f"Ultrawide findings and performance not using two panels: {layout}")
+
                 actual=page.evaluate("""() => ({
                   viewport:window.innerWidth,
                   html:document.documentElement.scrollWidth,
