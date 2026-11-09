@@ -17,6 +17,31 @@ var v42PathString=regexp.MustCompile("(?i)(?:[A-Z]:\\\\|\\\\\\\\)[^ \\t\\r\\n\\\
 var v42UnixPathString=regexp.MustCompile("/(?:home|users)/[^ \\t\\r\\n\\\"'<>]+")
 var v42WindowsUsername=regexp.MustCompile("(?i)(users\\\\)[^\\\\\\s]+")
 
+// Windows filesystem error strings frequently contain paths with spaces.
+// For export redaction, preserve the failure category but no path fragments.
+func v42SafeSkippedReason(reason string) string {
+    lower:=strings.ToLower(reason)
+    switch {
+    case strings.Contains(lower,"reparse point")||strings.Contains(lower,"symbolic link"):
+        return "symbolic link or reparse point not followed"
+    case strings.Contains(lower,"quarantine directory"):
+        return "SentinelGuard quarantine directory intentionally excluded"
+    case strings.Contains(lower,"access is denied")||strings.Contains(lower,"permission denied"):
+        if strings.Contains(lower,"directory listing failed"){return "directory listing denied"}
+        return "file access denied"
+    case strings.Contains(lower,"used by another process"):
+        return "file is in use by another process"
+    case strings.Contains(lower,"not a valid zip")||strings.Contains(lower,"zip archive could not be inspected"):
+        return "ZIP archive could not be inspected"
+    case strings.Contains(lower,"directory listing failed"):
+        return "directory listing failed"
+    case strings.Contains(lower,"file content could not be opened"):
+        return "file content could not be opened"
+    default:
+        return "path was skipped or could not be inspected"
+    }
+}
+
 func v42RedactReport(source any)(any,error){
  raw,err:=json.Marshal(source);if err!=nil{return nil,err}
  var obj any
@@ -45,6 +70,18 @@ func v42RedactReport(source any)(any,error){
           return tag(typed)+strings.ToLower(filepath.Ext(typed))
       }
       return tag(typed)
+    case "sha256atscan":
+      if typed==""{return ""}
+      return "[digest redacted]"
+    case "reason":
+      lower:=strings.ToLower(typed)
+      if strings.Contains(lower,"directory listing") ||
+         strings.Contains(lower,"file content could not") ||
+         strings.Contains(lower,"reparse point") ||
+         strings.Contains(lower,"quarantine directory") ||
+         strings.Contains(lower,"zip archive could not") {
+        return v42SafeSkippedReason(typed)
+      }
     }
     cleaned:=v42PathString.ReplaceAllStringFunc(typed,tag)
     cleaned=v42UnixPathString.ReplaceAllStringFunc(cleaned,tag)
