@@ -30,3 +30,31 @@ func TestSecurityWebViewRuntimeRootsReadFromProtectedRegistry(t *testing.T){
         if !filepath.IsAbs(root){t.Fatalf("relative trusted Program Files path: %q",root)}
     }
 }
+
+// Exercise the real in-process certificate verifier against an installed
+// WebView2 binary when the CI runner provides one. An unverified result is
+// never turned into an expected child; the test logs this honestly.
+func TestSecurityActualInstalledWebViewRuntimeSignerIfPresent(t *testing.T){
+    roots:=machineManagedProgramFilesRoots()
+    checked:=0
+    for _,root:=range roots {
+        appRoot:=filepath.Join(root,"Microsoft","EdgeWebView","Application")
+        versions,err:=os.ReadDir(appRoot)
+        if err!=nil{continue}
+        for _,version:=range versions{
+            if !version.IsDir(){continue}
+            exe:=filepath.Join(appRoot,version.Name(),"msedgewebview2.exe")
+            st,err:=os.Stat(exe)
+            if err!=nil||!st.Mode().IsRegular(){continue}
+            checked++
+            sig,_:=v42VerifySignature(exe)
+            class,reason:=classifyChildEvidence("msedgewebview2.exe",exe,sig,roots)
+            t.Logf("WEBVIEW_SIGNER_PROBE version=%q status=%q class=%q reason=%q",version.Name(),sig,class,reason)
+            if class==childExpectedWebView && sig!="Trusted embedded signature (offline; revocation not checked)"{
+                t.Fatal("unverified signature was incorrectly treated as expected")
+            }
+            return
+        }
+    }
+    if checked==0{t.Skip("no machine-installed WebView2 Runtime present on this Windows runner")}
+}
