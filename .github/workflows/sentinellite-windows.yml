@@ -51,7 +51,7 @@ jobs:
         run: go vet ./...
       - name: Early security-gate smoke tests (before full benign survey)
         run: |
-          go test -count=1 -v -run "^(TestSecurityDefenderJobKillOnCloseTerminatesControlledChild|TestSecurityRealScanPipelineReachesTripleImportSignatureHook|TestSafetyNativeSignatureProbeDoesNotUseInterpreter|TestSecurityProcessCreationFunctionAllowlistAndReachability|TestSecurityToolhelpTripwireObservesHarmlessChild|TestSecurityWindowsShellButtonsUseCOMSTA|TestSecurityReleaseEditionVersionParity)$" .
+          go test -count=1 -v -run "^(TestSecurityDefenderJobKillOnCloseTerminatesControlledChild|TestSecurityRealScanPipelineReachesTripleImportSignatureHook|TestSafetyNativeSignatureProbeDoesNotUseInterpreter|TestSecurityProcessCreationFunctionAllowlistAndReachability|TestSecurityToolhelpTripwireObservesHarmlessChild|TestSecurityWindowsShellButtonsUseCOMSTA|TestSecurityReleaseEditionVersionParity|TestSecurityExpectedWebViewRequiresTrustedLocationAndSignature|TestSecurityChildReviewCountAndWarningAreConservative|TestSecurityWindowsProcessIdentityUsesKernelPathAndCreationTime)$" .
           if ($LASTEXITCODE -ne 0) { throw 'Core process-safety regression gate failed; do not proceed to full survey or build' }
       - name: Run all synthetic detector and active-mode tests
         run: go test -count=1 -v ./...
