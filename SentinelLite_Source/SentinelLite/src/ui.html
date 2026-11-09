@@ -357,6 +357,15 @@ html[data-scheme="light"]{--ui-focus:var(--accent)}
  .report-privacy{margin:10px}
 }
 
+.scan-help{padding:11px 13px;margin-top:12px;border-radius:11px}
+.scan-help summary{font-size:12px;color:var(--text);font-weight:700;cursor:pointer;line-height:1.45}
+.scan-help p{font-size:12px;color:var(--sub);line-height:1.6;margin:10px 0 0}
+.scan-help p strong{color:var(--text)}
+.resource-help{border-top:1px solid var(--line);padding-top:9px;margin-top:10px}
+.resource-help summary{font-size:11px;font-weight:700;color:var(--sub);cursor:pointer}
+.resource-help .resource-foot{margin:10px 0 0}
+@media(min-width:2100px){.shell>aside .panel{padding:17px}.scan-help{margin-top:11px}}
+
 </style>
 </head>
 <body>
@@ -381,8 +390,7 @@ html[data-scheme="light"]{--ui-focus:var(--accent)}
     <p class="hint" id="engineHint">Bounded, read-only inspection of suspicious patterns; no file execution or automatic quarantine.</p>
     <div id="defenderNote" class="info warn hide"><strong>About Defender:</strong> Uses the documented <span class="kbd">-DisableRemediation</span> scan switch. Defender's *separate real-time protection* can still act under your existing Windows settings. Administrator access may be required.</div>
     <div class="progress"><div class="progress-head"><b id="statusText">Ready for a scan</b><span class="small muted" id="elapsed">Idle</span></div><div class="meter" id="meter"><i></i></div><div class="path-current" id="current">No scan in progress.</div><div class="error hide" id="error"></div></div>
-    <div class="info"><strong>Threat intelligence:</strong> Expanded context-aware analysis of scripts, suspicious shortcuts, archive contents, task XML, registry imports, structured configurations and extortion notes. Detections are advisory, not proof of infection. Benign examples and inactive code should be treated cautiously. <strong>Suspicious does not mean infected.</strong></div>
-    <div class="info"><strong>False positives are possible.</strong> Startup shortcuts, legitimate scripts, and software in AppData can all look unusual. Do not quarantine files you have not assessed.</div>
+    <details class="info scan-help"><summary>How findings are evaluated &amp; possible false positives</summary><p><strong>Threat intelligence:</strong> Context-aware review of scripts, shortcuts, archive contents, task XML, registry imports, configurations and extortion notes. These indicators are advisory, not proof of infection.</p><p><strong>False positives are possible.</strong> Startup shortcuts, legitimate scripts, debugging tools and software in AppData can appear suspicious. Do not quarantine a file without reviewing it.</p></details>
    </div></aside>
   <main>
     <section id="activeProtectionPanel" class="active-panel hide" aria-label="Live file protection">
@@ -424,7 +432,7 @@ html[data-scheme="light"]{--ui-focus:var(--accent)}
       </div>
       <p class="resource-foot" id="childProcessImages">No direct children observed.</p>
       <div class="info warn hide" id="childProcessAlert" role="alert"></div>
-      <p class="resource-foot" id="resourceNote">Measures SentinelGuard's own process during the scan (sampled every second), not total system resource use. Average and peak values remain visible when the scan completes. CPU is normalized to all logical processors; memory is the Windows working set. Windows Toolhelp32 samples direct children approximately four times per second and at scan completion. Expected UI children must have the exact WebView2 Runtime name, a path under a machine-managed WebView2 installation and a valid embedded Authenticode signature; the Microsoft signer is not independently extracted. Their appearance is still recorded, but does not alone trigger a scanner warning. Unknown paths, failed signatures and every other child remain warnings during heuristic scans. Very short-lived children can be missed; zero unexpected is NOT proof that no subprocess ran. Explicit Defender scans can create a helper, and the separate Defender service is not included.</p>
+      <details class="resource-help"><summary>Measurement details and monitoring limitations</summary><p class="resource-foot" id="resourceNote">Measures SentinelGuard's own process during the scan (sampled every second), not total system resource use. Average and peak values remain visible when the scan completes. CPU is normalized to all logical processors; memory is the Windows working set. Windows Toolhelp32 samples direct children approximately four times per second and at scan completion. Expected UI children must have the exact WebView2 Runtime name, a path under a machine-managed WebView2 installation and a valid embedded Authenticode signature; the Microsoft signer is not independently extracted. Their appearance is still recorded, but does not alone trigger a scanner warning. Unknown paths, failed signatures and every other child remain warnings during heuristic scans. Very short-lived children can be missed; zero unexpected is NOT proof that no subprocess ran. Explicit Defender scans can create a helper, and the separate Defender service is not included.</p></details>
     </section>
 
     <div class="panel content-panel"><div class="tabs"><button class="tab active" data-tab="findings">Findings</button><button class="tab" data-tab="vault">Quarantine <span id="vaultCount" class="small"></span></button></div>
