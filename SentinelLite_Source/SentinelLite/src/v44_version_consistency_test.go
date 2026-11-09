@@ -32,9 +32,9 @@ func TestSecurityReleaseEditionVersionParity(t *testing.T) {
     }
     src:=string(html)
     if !strings.Contains(src,"v4.2</span>") || !strings.Contains(src,"SENTINELGUARD 4.2") ||
-        !strings.Contains(src,"securityHoldBanner") ||
+        !strings.Contains(src,"releaseStatusNote") ||
         !strings.Contains(src,"appEditionHeader"){
-        t.Fatal("UI lacks matching edition or visible security hold")
+        t.Fatal("UI lacks matching edition or current field-validation status notice")
     }
     root:=filepath.Join("..","..","..","Active_Edition")
     for _,path:=range []string{
