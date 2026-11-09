@@ -5,6 +5,7 @@ package main
 import (
     "fmt"
     "os"
+    "sync"
     "syscall"
     "time"
     "unsafe"
@@ -30,6 +31,20 @@ var processSnapshotDLL = syscall.NewLazyDLL("kernel32.dll")
 var createToolhelp32Snapshot = processSnapshotDLL.NewProc("CreateToolhelp32Snapshot")
 var process32FirstW = processSnapshotDLL.NewProc("Process32FirstW")
 var process32NextW = processSnapshotDLL.NewProc("Process32NextW")
+var hostProcessTimesOnce sync.Once
+var hostProcessStartTicks uint64
+var hostProcessIdentityError error
+
+func currentHostCreationTicks()(uint64,error){
+    hostProcessTimesOnce.Do(func(){
+        _,hostProcessStartTicks,hostProcessIdentityError=getChildProcessIdentity(uint32(os.Getpid()))
+        if hostProcessStartTicks==0&&hostProcessIdentityError==nil{
+            hostProcessIdentityError=fmt.Errorf("Windows did not supply host process creation timestamp")
+        }
+    })
+    return hostProcessStartTicks,hostProcessIdentityError
+}
+
 
 // sampleDirectChildProcesses lists *currently alive* processes with the
 // present process PID as their recorded parent. It cannot capture children
@@ -65,7 +80,16 @@ func sampleDirectChildProcesses() ([]ObservedChildProcess, bool, error) {
                 ExecutablePath: path,
                 CreationTimeTicks: created,
             }
-            if identityErr!=nil {child.IdentityError=identityErr.Error()}
+            if identityErr!=nil {
+                child.IdentityError=identityErr.Error()
+            } else if created==0 {
+                child.IdentityError="Windows did not provide a child process creation timestamp"
+            } else if hostStarted,hostErr:=currentHostCreationTicks();hostErr!=nil{
+                child.IdentityError="Could not establish SentinelGuard's own process creation identity: "+hostErr.Error()
+            } else if created<hostStarted{
+                // A stale parent PID is never enough to classify a child.
+                child.IdentityError="Process predates the current SentinelGuard instance (possible parent PID reuse)"
+            }
             out=append(out,child)
         }
         ok, _, nextErr := process32NextW.Call(handle, uintptr(unsafe.Pointer(&entry)))
