@@ -56,12 +56,17 @@ func sampleDirectChildProcesses() ([]ObservedChildProcess, bool, error) {
     captured := time.Now()
     for {
         if entry.ParentProcessID == parentID && entry.ProcessID != parentID {
-            out = append(out, ObservedChildProcess{
+            path,created,identityErr:=getChildProcessIdentity(entry.ProcessID)
+            child:=ObservedChildProcess{
                 PID: entry.ProcessID,
                 ParentPID: parentID,
                 Image: syscall.UTF16ToString(entry.ExeFile[:]),
                 FirstSeen: captured,
-            })
+                ExecutablePath: path,
+                CreationTimeTicks: created,
+            }
+            if identityErr!=nil {child.IdentityError=identityErr.Error()}
+            out=append(out,child)
         }
         ok, _, nextErr := process32NextW.Call(handle, uintptr(unsafe.Pointer(&entry)))
         if ok == 0 {
