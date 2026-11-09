@@ -101,81 +101,102 @@ func v42PEIndicators(imported map[string]bool,highEntropy,packed,overlay bool)(i
  }
  return addition,why
 }
-// These expressions are evaluated against *dictionary syntax*, not against
-// arbitrary PDF text, manuals, comments or embedded sample code.
+// Operate only on PDF dictionary syntax outside comments and literal strings.
+// This is bounded lexical inspection, not a full PDF parser or stream decoder.
 var pdfDictOpenAction = regexp.MustCompile(`(?i)/OpenAction(?:\s|/|>|$)`)
 var pdfDictJavaScript = regexp.MustCompile(`(?i)/S\s*/JavaScript(?:\s|/|>|$)`)
 var pdfDictJSKey = regexp.MustCompile(`(?i)/JS(?:\s|/|>|$)`)
 var pdfDictLaunch = regexp.MustCompile(`(?i)/S\s*/Launch(?:\s|/|>|$)`)
-var pdfDictFileTarget = regexp.MustCompile(`(?i)/F\s*(?:\((?:[^\\)]|\\.){1,256}\.(?:exe|cmd|ps1)\)|/[^\s<>\[\]()]{1,256}\.(?:exe|cmd|ps1))`)
+var pdfDictFileKey = regexp.MustCompile(`(?i)/F(?:\s|\(|/|<|$)`)
+var pdfDictFileTarget = regexp.MustCompile(`(?i)^/F\s*(?:\((?:[^\\)]|\\.){1,256}\.(?:exe|cmd|ps1)\)|/[^\s<>\[\]()]{1,256}\.(?:exe|cmd|ps1))`)
 
-// pdfActionDictionaries is a bounded lexical scanner, not a complete PDF
-// parser: it skips comments and string literals so examples in a manual do
-// not masquerade as active action dictionaries. Object streams are not
-// decompressed. Retain existing scanner limits and uncertainty disclosure.
-func pdfActionDictionaries(buf []byte) [][]byte {
- const maxDictBytes=8192
- dictionaries:=make([][]byte,0,8)
- starts:=make([]int,0,4)
- inComment:=false
+type pdfActionDict struct{ raw,syntax []byte }
+
+// pdfMaskCommentAndStringBytes preserves offsets while neutralizing apparent
+// PDF operators inside titles, literal strings, hex data and comments.
+func pdfMaskCommentAndStringBytes(buf []byte) []byte {
+ out:=append([]byte(nil),buf...)
+ comment:=false
  literalDepth:=0
  hexString:=false
  escaped:=false
- for i:=0;i<len(buf);i++{
-  c:=buf[i]
-  if inComment {
-   if c=='\r'||c=='\n'{inComment=false}
+ for i,c:=range buf{
+  if comment{
+   out[i]=' '
+   if c=='\r'||c=='\n'{comment=false}
    continue
   }
   if literalDepth>0{
+   out[i]=' '
    if escaped{escaped=false;continue}
    if c=='\\'{escaped=true;continue}
    if c=='(' {literalDepth++}
-   if c==')'{literalDepth--}
+   if c==')' {literalDepth--}
    continue
   }
-  if hexString {
+  if hexString{
+   out[i]=' '
    if c=='>'{hexString=false}
    continue
   }
-  if c=='%' {inComment=true;continue}
-  if c=='(' {literalDepth=1;continue}
-  if c=='<' {
-   if i+1<len(buf)&&buf[i+1]=='<'{
-    if len(starts)<8{starts=append(starts,i)}
-    i++
-   }else{hexString=true}
+  if c=='%' {comment=true;out[i]=' ';continue}
+  if c=='(' {literalDepth=1;out[i]=' ';continue}
+  if c=='<' && (i+1>=len(buf)||buf[i+1]!='<') {
+   // The first '<' of a dictionary and its matching '>' remain visible;
+   // the inside of a PDF hex string is not actionable PDF syntax.
+   if i==0||buf[i-1]!='<'{hexString=true;out[i]=' '}
+  }
+ }
+ return out
+}
+
+func pdfActionDictionaries(buf []byte) []pdfActionDict{
+ const maxDictBytes=8192
+ syntax:=pdfMaskCommentAndStringBytes(buf)
+ dicts:=make([]pdfActionDict,0,8)
+ starts:=make([]int,0,4)
+ for i:=0;i+1<len(syntax);i++{
+  if syntax[i]=='<'&&syntax[i+1]=='<'{
+   if len(starts)<8{starts=append(starts,i)}
+   i++
    continue
   }
-  if c=='>' && i+1<len(buf) && buf[i+1]=='>'{
+  if syntax[i]=='>'&&syntax[i+1]=='>'{
    if n:=len(starts);n>0{
-    begin:=starts[n-1]
+    start:=starts[n-1]
     starts=starts[:n-1]
-    if i+2-begin<=maxDictBytes {
-     dictionaries=append(dictionaries,buf[begin:i+2])
+    if i+2-start<=maxDictBytes {
+     dicts=append(dicts,pdfActionDict{raw:buf[start:i+2],syntax:syntax[start:i+2]})
     }
    }
    i++
   }
  }
- return dictionaries
+ return dicts
 }
 func inspectV42PDF(buf []byte,score *int,reasons *[]string){
  if len(buf)<16||!bytes.HasPrefix(buf,[]byte("%PDF-")){return}
  dicts:=pdfActionDictionaries(buf)
  hasOpenAction:=false
- hasJavascriptAction:=false
+ hasJavaScriptAction:=false
  hasExecutableLaunch:=false
- for _,dict:=range dicts {
-  if pdfDictOpenAction.Match(dict){hasOpenAction=true}
-  if pdfDictJavaScript.Match(dict) && pdfDictJSKey.Match(dict){
-   hasJavascriptAction=true
+ for _,d:=range dicts{
+  if pdfDictOpenAction.Match(d.syntax){hasOpenAction=true}
+  if pdfDictJavaScript.Match(d.syntax)&&pdfDictJSKey.Match(d.syntax){
+   hasJavaScriptAction=true
   }
-  if pdfDictLaunch.Match(dict)&&pdfDictFileTarget.Match(dict){
-   hasExecutableLaunch=true
+  if pdfDictLaunch.Match(d.syntax){
+   // /F must itself be real dictionary syntax. Only then examine the
+   // immediately following raw file-spec string for an executable suffix.
+   for _,loc:=range pdfDictFileKey.FindAllIndex(d.syntax,12){
+    if pdfDictFileTarget.Match(d.raw[loc[0]:]){
+     hasExecutableLaunch=true
+     break
+    }
+   }
   }
  }
- if hasOpenAction&&hasJavascriptAction{
+ if hasOpenAction&&hasJavaScriptAction{
   *score+=52
   *reasons=append(*reasons,"PDF has document-open and JavaScript action dictionaries (limited structural inspection, not proof of exploit)")
  }
