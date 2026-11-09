@@ -34,7 +34,7 @@ func TestStage10PrivacyDisclosureAndJSONShape(t *testing.T) {
  rec:=httptest.NewRecorder()
  srv.routes().ServeHTTP(rec,req)
  if rec.Code!=http.StatusOK {t.Fatalf("report HTTP status %d: %s",rec.Code,rec.Body.String())}
- if !strings.Contains(rec.Header().Get("Content-Disposition"),"SentinelGuard_v4.2_Report.json"){t.Fatal("export filename not updated")}
+ if !strings.Contains(rec.Header().Get("Content-Disposition"),"SentinelGuard_v4.2_Scan_Findings.json"){t.Fatal("export filename not updated")}
  var got struct{
   Product string `json:"product"`
   Version string `json:"version"`

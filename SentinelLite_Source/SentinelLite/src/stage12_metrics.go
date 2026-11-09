@@ -48,7 +48,7 @@ func (a *App) resetMetricsLocked() {
 	a.resources = ScanResourceUsage{MemoryBasis: kind, CPUAvailable: err == nil, LastSample: now}
 	a.lastResourceCPU = cpu
 	a.lastResourceAt = now
-	a.childSeen = make(map[uint32]ObservedChildProcess)
+	a.childSeen = make(map[observedChildIdentity]ObservedChildProcess)
 	a.cpuObservations = 0
 	a.memObservations = 0
 	a.sumCPUPercent = 0
@@ -149,40 +149,84 @@ func (a *App) stopResources() {
 // counter is not proof that no child was created; use ETW for strong evidence.
 func (a *App) sampleChildProcesses(done <-chan struct{}) {
     entries, available, err := sampleDirectChildProcesses()
+
+    // Resolve new process identities OUTSIDE the scan lock: native
+    // Authenticode may take up to 2.5s. Repeated 250ms snapshots do not
+    // re-verify the same PID/process-creation-time pair.
+    a.mu.RLock()
+    if a.resourceDone!=done || !a.status.Active {
+        a.mu.RUnlock()
+        return
+    }
+    newChildren:=make([]ObservedChildProcess,0)
+    for _,child:=range entries{
+        key:=observedChildIdentity{PID:child.PID,CreationTimeTicks:child.CreationTimeTicks}
+        if _,ok:=a.childSeen[key];!ok{newChildren=append(newChildren,child)}
+    }
+    a.mu.RUnlock()
+    for i:=range newChildren {
+        newChildren[i]=classifyObservedChildProcess(newChildren[i])
+    }
+
     a.mu.Lock()
     defer a.mu.Unlock()
-    if a.resourceDone != done || !a.status.Active {
-        return // a delayed snapshot must not contaminate another scan
-    }
-    a.status.ChildProcessMonitoringAvailable = available
-    if !available { return }
-    if err != nil {
-        if a.status.ChildProcessMonitoringError == "" {
-            a.status.ChildProcessMonitoringError = err.Error()
+    // A delayed process-signature verification cannot modify a newer scan.
+    if a.resourceDone!=done || !a.status.Active{return}
+    a.status.ChildProcessMonitoringAvailable=available
+    if !available{return}
+    if err!=nil{
+        if a.status.ChildProcessMonitoringError==""{
+            a.status.ChildProcessMonitoringError=err.Error()
         }
-        if strings.HasPrefix(a.status.Mode,"heuristic:") && a.status.ChildProcessWarning == "" {
-            a.status.ChildProcessWarning = "Unable to verify child processes during heuristic scanning: OS process sampling failed."
+        if strings.HasPrefix(a.status.Mode,"heuristic:") {
+            a.status.ChildProcessWarning="WARNING: Windows process monitoring failed during heuristic scanning; child-process safety is unknown."
         }
         return
     }
     a.status.ChildProcessSampleCount++
-    if a.childSeen == nil { a.childSeen = make(map[uint32]ObservedChildProcess) }
-    for _, child := range entries {
-        if _, exists := a.childSeen[child.PID]; exists { continue }
-        a.childSeen[child.PID] = child
-        a.status.ChildProcessesObserved++
-        if len(a.status.ChildProcessEntries) < maxObservedChildren {
-            a.status.ChildProcessEntries = append(a.status.ChildProcessEntries,child)
-        } else {
-            a.status.ChildProcessOmitted++
-        }
+    if a.childSeen==nil{a.childSeen=make(map[observedChildIdentity]ObservedChildProcess)}
+    for _,child:=range newChildren{
+        a.recordClassifiedChildLocked(child)
     }
-    names := make(map[string]struct{})
-    for _, child := range a.status.ChildProcessEntries { names[child.Image] = struct{}{} }
-    a.status.ChildProcessImages = a.status.ChildProcessImages[:0]
-    for name := range names { a.status.ChildProcessImages = append(a.status.ChildProcessImages,name) }
+    names:=make(map[string]struct{})
+    for _,child:=range a.status.ChildProcessEntries{
+        names[child.Image]=struct{}{}
+    }
+    a.status.ChildProcessImages=a.status.ChildProcessImages[:0]
+    for name:=range names{a.status.ChildProcessImages=append(a.status.ChildProcessImages,name)}
     sort.Strings(a.status.ChildProcessImages)
-    if a.status.ChildProcessesObserved > 0 && strings.HasPrefix(a.status.Mode,"heuristic:") {
-        a.status.ChildProcessWarning = "WARNING: OS process monitor observed a direct child during heuristic scanning. Stop scanning and review this incident."
+
+    a.reconcileChildWarningLocked()
+
+}
+
+// The following two helpers only mutate the in-memory scan report. Keeping
+// them separate allows a deterministic test to prove that an expected UI
+// child is still counted but does not trigger an execution-warning.
+func (a *App) recordClassifiedChildLocked(child ObservedChildProcess) {
+    key:=observedChildIdentity{PID:child.PID,CreationTimeTicks:child.CreationTimeTicks}
+    if _,exists:=a.childSeen[key];exists{return}
+    a.childSeen[key]=child
+    a.status.ChildProcessesObserved++
+    if child.Classification==childExpectedWebView{
+        a.status.ChildProcessesExpected++
+    } else {
+        a.status.ChildProcessesUnexpected++
+    }
+    if len(a.status.ChildProcessEntries)<maxObservedChildren{
+        a.status.ChildProcessEntries=append(a.status.ChildProcessEntries,child)
+    } else {
+        a.status.ChildProcessOmitted++
+    }
+}
+
+func (a *App) reconcileChildWarningLocked(){
+    if !strings.HasPrefix(a.status.Mode,"heuristic:"){return}
+    if a.status.ChildProcessesUnexpected>0{
+        a.status.ChildProcessWarning="WARNING: Unexpected or unverified direct child process observed during heuristic scanning. Review the child identity, runtime path, and signature; the scanner does not intentionally execute inspected files."
+    }else if a.status.ChildProcessMonitoringError!=""{
+        a.status.ChildProcessWarning="WARNING: Windows process monitoring was incomplete; process safety is unknown."
+    }else{
+        a.status.ChildProcessWarning=""
     }
 }

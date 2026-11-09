@@ -69,6 +69,12 @@ func TestV42PDFActionsAndBenignLookalikes(t *testing.T){
   {"launch.pdf","%PDF-1.7\n1 0 obj <</S /Launch /F (setup.exe)>>",true},
   {"ordinary.pdf","%PDF-1.7\n1 0 obj << /Type /Catalog /Pages 2 0 R >>",false},
   {"manual.pdf","%PDF-1.7\nThis manual mentions /JavaScript but contains no /OpenAction",false},
+  {"pdf-training-document.pdf","%PDF-1.7\n1 0 obj << /Type /Catalog /Pages 2 0 R >>\n(training docs: /OpenAction /JavaScript /JS and /Launch setup.exe)\n",false},
+  {"pdf-comment-tokens.pdf","%PDF-1.7\n% << /OpenAction /JS /S /JavaScript >>\n1 0 obj << /Type /Catalog >>",false},
+  {"pdf-text-literal.pdf","%PDF-1.7\n1 0 obj << /Type /Catalog /Title (Example \\(<< /OpenAction >>\\) and /JS /S /JavaScript) >>",false},
+  {"pdf-separate-object-mentions.pdf","%PDF-1.7\n1 0 obj << /OpenAction 2 0 R >>\n2 0 obj << /S /JavaScript >>\n3 0 obj << /JS (non-executing example) >>",false},
+  {"pdf-real-launch-dictionary.pdf","%PDF-1.7\n1 0 obj << /S /Launch /F (setup.cmd) >>",true},
+  {"pdf-launch-text-only.pdf","%PDF-1.7\n1 0 obj << /Type /Catalog /Title (the strings /S /Launch and /F (setup.exe) are documentation) >>",false},
  }
  for _,tc:=range samples{
   score:=0;why:=[]string{}

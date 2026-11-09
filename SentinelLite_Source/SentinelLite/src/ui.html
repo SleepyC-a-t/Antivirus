@@ -166,9 +166,9 @@ input::placeholder{color:var(--sub);opacity:.8}
 .info strong{color:var(--text)}
 .info.warn{background:var(--warning-bg);border-color:var(--warning-line);color:var(--warning-ink)}
 .info.warn strong{color:var(--warning-ink)}
-#securityHoldBanner{margin:0 0 18px;border-radius:12px;position:sticky;top:0;z-index:12;
- box-shadow:0 5px 18px rgba(0,0,0,.08);line-height:1.6;backdrop-filter:blur(8px)}
-html[data-scheme="light"] #securityHoldBanner{box-shadow:0 5px 18px rgba(49,59,73,.10)}
+#releaseStatusNote{margin:0 0 17px;padding:10px 13px;border-radius:11px;border:1px solid var(--line);background:var(--surface-low);color:var(--sub);font-size:12px;line-height:1.5}
+#releaseStatusNote strong{color:var(--text)}
+
 .progress{background:var(--surface-low);border-color:var(--line)}
 .path-current{color:var(--sub)}
 .meter{background:var(--surface-high)}
@@ -263,7 +263,7 @@ html[data-scheme="light"]{--ui-focus:var(--accent)}
   .appearance-option{flex:1;justify-content:center;min-width:0}
   .appearance-option span{font-size:11px}
   #windowsSecurity,#exit{padding:8px 9px;font-size:11px;min-width:0}
-  #securityHoldBanner{font-size:11px;top:0;margin-bottom:12px}
+  #releaseStatusNote{font-size:11px;margin-bottom:12px}
   .hero{margin:12px 0 14px}
   .hero h2{font-size:clamp(23px,6.2vw,29px)}
   .hero p{font-size:12px}
@@ -304,7 +304,7 @@ html[data-scheme="light"]{--ui-focus:var(--accent)}
     <button class="appearance-option" type="button" data-appearance-option="system" aria-pressed="false" title="Follow the Windows appearance setting">▣ <span>System</span></button>
    </div><button class="outline" id="windowsSecurity">Open Windows Security</button><button class="outline" id="exit">Exit application</button></div></header>
  <section class="hero"><span class="eyebrow" id="appEditionHeader">SENTINELGUARD 4.2 · DESKTOP SECURITY CENTER</span><h2>Inspect first. Decide what happens next.</h2><p>One security center for on-demand scanning and optional download protection. Your live shield starts <strong>OFF</strong>. Heuristic findings are evidence for review, not proof of infection. Keep your main antivirus enabled.</p></section>
- <div class="info warn" role="alert" id="securityHoldBanner"><strong>SECURITY HOLD — REVIEW-ONLY CANDIDATE.</strong> The full-scan PowerShell incident is fixed in CI, pending independent Windows field verification. This unsigned build is not approved for ordinary use. Keep Defender enabled.</div>
+ <div id="releaseStatusNote" role="note"><strong>Supplemental, locally operated heuristic scanner.</strong> The earlier process-launch regression passed CI and controlled Windows field testing. Findings are review suggestions, not confirmed malware; independent real-malware detection accuracy is not established. Keep Microsoft Defender enabled.</div>
   <div class="shell">
   <aside><div class="panel"><h3>Configure a scan</h3><p class="section-desc">Choose a scanning engine and the areas to inspect. Nothing is quarantined automatically by SentinelGuard.</p>
     <div class="control-label">Scanning engine</div>
@@ -338,8 +338,8 @@ html[data-scheme="light"]{--ui-focus:var(--accent)}
       <p id="launchReviewStatus" class="active-sub">Approval is required before SentinelGuard launches the selected program.</p></div>
       <div class="active-options"><b>Browser protection (optional companion extension)</b>
       <p class="active-sub">Blocks exact phishing URLs from a free community feed in Firefox/Chrome/Edge after you pair the extension. Controlled by the ON/OFF switch, with with a short synchronization delay. Never intercepts or uploads browsing history.</p>
-      <div class="active-btns"><button class="outline" id="activePair">Copy read-only browser pairing link</button><button class="outline" id="activePairRevoke">Revoke browser pairing</button><button class="outline" id="activeReport">Export protection report</button></div>
-      <label class="active-sub"><input id="exportRedact" type="checkbox"> Redact paths and filenames in exported JSON (recommended before sharing)</label>
+      <div class="active-btns"><button class="outline" id="activePair">Copy read-only browser pairing link</button><button class="outline" id="activePairRevoke">Revoke browser pairing</button><button class="outline" id="activeReport">Export live-protection status (not scan findings)</button></div>
+      <label class="active-sub"><input id="exportRedact" type="checkbox"> Redact live-protection paths and filenames (recommended before sharing)</label>
       <p id="activeMessage" class="active-sub"></p></div>
       <div class="active-options"><b>Recent protection events</b><div id="activeEvents" class="active-events">No events yet.</div></div>
     </section>
@@ -353,21 +353,23 @@ html[data-scheme="light"]{--ui-focus:var(--accent)}
         <div class="resource-tile"><small>RAM · Current</small><b id="memoryCurrent">—</b></div>
         <div class="resource-tile"><small>RAM · Average</small><b id="memoryAverage">—</b></div>
         <div class="resource-tile"><small>RAM · Sampled peak</small><b id="memoryPeak">—</b></div>
-        <div class="resource-tile"><small>Child processes observed by Windows</small><b id="childProcessesObserved">0</b></div>
+        <div class="resource-tile"><small>Direct child processes observed</small><b id="childProcessesObserved">0</b></div>
+        <div class="resource-tile"><small>Expected WebView2 interface children</small><b id="childProcessesExpected">0</b></div>
+        <div class="resource-tile"><small>Unexpected / unverified children</small><b id="childProcessesUnexpected">0</b></div>
       </div>
       <p class="resource-foot" id="childProcessImages">No direct children observed.</p>
       <div class="info warn hide" id="childProcessAlert" role="alert"></div>
-      <p class="resource-foot" id="resourceNote">Measures SentinelGuard's own process during the scan (sampled every second), not total system resource use. Average and peak values remain visible when the scan completes. CPU is normalized to all logical processors; memory is the Windows working set. The Windows Toolhelp32 tripwire samples direct children four times a second and at scan completion. It records image names and PIDs. Very short-lived children can be missed. Zero is NOT proof no child started. Heuristic scanning should show zero; explicit Defender scans can create a separate helper; Defender service activity is not included.</p>
+      <p class="resource-foot" id="resourceNote">Measures SentinelGuard's own process during the scan (sampled every second), not total system resource use. Average and peak values remain visible when the scan completes. CPU is normalized to all logical processors; memory is the Windows working set. Windows Toolhelp32 samples direct children approximately four times per second and at scan completion. Expected UI children must have the exact WebView2 Runtime name, a path under a machine-managed WebView2 installation and a valid embedded Authenticode signature; the Microsoft signer is not independently extracted. Their appearance is still recorded, but does not alone trigger a scanner warning. Unknown paths, failed signatures and every other child remain warnings during heuristic scans. Very short-lived children can be missed; zero unexpected is NOT proof that no subprocess ran. Explicit Defender scans can create a helper, and the separate Defender service is not included.</p>
     </section>
 
     <div class="panel content-panel"><div class="tabs"><button class="tab active" data-tab="findings">Findings</button><button class="tab" data-tab="vault">Quarantine <span id="vaultCount" class="small"></span></button></div>
-      <div id="findingsTab"><div class="tools"><input type="text" class="search" id="search" placeholder="Search name, path or reason…"><select id="filter"><option value="all">All severity levels</option><option value="High">High</option><option value="Elevated">Elevated</option><option value="Review">Review</option></select><button id="export">Export report</button></div>
+      <div id="findingsTab"><div class="tools"><input type="text" class="search" id="search" placeholder="Search name, path or reason…"><select id="filter"><option value="all">All severity levels</option><option value="High">High</option><option value="Elevated">Elevated</option><option value="Review">Review</option></select><button id="export">Export scan findings JSON</button><label class="small muted" for="scanExportRedact"><input id="scanExportRedact" type="checkbox" checked> Redact identifying paths</label></div>
         <details class="report-privacy" id="reportPrivacy"><summary>Privacy and JSON report contents — read before sharing</summary>
-          <p><strong>Includes:</strong> product name and version; export timestamp (<code>exportedAt</code>); a notice; scan status (<code>active</code>, <code>mode</code>, <code>current</code> scan path, file/skipped/finding/omitted counts, scan start time, error text, and <code>resources</code> containing the CPU and memory current/average/peak values, sample count, and sample timestamp). <code>status.childProcessesObserved</code>, <code>childProcessImages</code>, <code>childProcessEntries</code>, <code>childProcessSampleCount</code>, <code>childProcessMonitoringError</code>, and <code>childProcessWarning</code> are sampled Toolhelp32 results. They reveal process names, PIDs and first-seen timestamps; a child that exits between samples can be missed. <code>current</code> and errors can contain full folder or drive paths.</p>
+          <p><strong>Includes:</strong> product name and version; export timestamp (<code>exportedAt</code>); a notice; scan status (<code>active</code>, <code>mode</code>, <code>current</code> scan path, file/skipped/finding/omitted counts, scan start time, error text, and <code>resources</code> containing the CPU and memory current/average/peak values, sample count, and sample timestamp). <code>status.childProcessesObserved</code>, <code>childProcessesExpected</code>, <code>childProcessesUnexpected</code>, <code>childProcessImages</code>, <code>childProcessEntries</code>, <code>childProcessSampleCount</code>, <code>childProcessMonitoringError</code>, and <code>childProcessWarning</code> are sampled Toolhelp32 results. Entries may include process name, PID, parent PID, full executable path, creation-time ticks, identity errors, signature result and classification reasoning. Full paths and timestamps may identify your system; enable redaction before sharing. Very short-lived children may be missed. <code>current</code> and errors can contain full folder or drive paths.</p>
           <p><strong>Skipped paths:</strong> <code>skippedPaths</code> lists full filesystem paths and readable reasons (for example, access denied, reparse point, or an archive inspection limit). <code>status.skipLogOmitted</code> counts any records beyond the 100,000-entry memory safety limit. Unlike the previous version, a scan may contain more identifiable filesystem metadata even when no threats were found. Defender's separate engine does not expose per-file skip telemetry.</p>
           <p><strong>For each flagged item:</strong> a random per-scan finding ID, full <code>path</code>, filename, score, severity, detection engine, written explanations, file size, last-modified timestamp, and whether manual quarantine is available. A reason may mention filenames inside an archive or a detected threat name.</p>
           <p><strong>Personal information that may be revealed:</strong> your Windows account name inside <code>C:\Users\...</code> paths, drive letters, folder names, project/document names, and Windows account SID strings (for example in Recycle Bin paths). File names and timestamps may reveal what software or documents you use and when they were modified. The skipped-path list can additionally expose folders and private filenames unrelated to detected threats. The random finding ID is not a Windows user ID.</p>
-          <p><strong>Not included:</strong> actual file contents, passwords, browser cookies, local browser history, scan authentication token, or the quarantine vault inventory. File SHA-256 hashes viewed separately in the app are not part of this export. IP addresses and email addresses are not separately collected, but could appear if you used them in a filename or path.</p>
+          <p><strong>Not included:</strong> actual file contents, passwords, browser cookies, local browser history, scan authentication token, or the quarantine vault inventory. File SHA-256 hashes viewed separately in the app are not part of this export. The report includes <code>findingReasonsSummary</code> with aggregate reason frequencies (no filenames), and <code>reportKind=manualScanFindings</code> to distinguish it from the unrelated live-protection export. IP addresses and email addresses are not separately collected, but could appear if you used them in a filename or path.</p>
           <p><strong>Sharing:</strong> the report is downloaded to your device. SentinelGuard does not automatically upload it, send telemetry, or share it with the developers. Anyone you send the JSON to can read its paths and metadata. Inspect and redact private usernames, filenames and paths before uploading or forwarding it; redaction changes those fields for later comparisons.</p>
         </details>
         <div class="table-scroll"><table><thead><tr><th style="width:34px"><input class="check" type="checkbox" id="selectAll" title="Select visible files"></th><th>Finding</th><th>Severity</th><th>Engine</th><th>Action</th></tr></thead><tbody id="findingRows"></tbody></table><div id="emptyFindings" class="empty"><strong>No findings to display</strong>Start a scan to review suspicious files here.</div></div>
@@ -442,9 +444,14 @@ function renderResources(){
  metric('memoryCurrent',has&&r.samples?r.currentMemoryMiB:null,' MiB');
  metric('memoryAverage',has&&r.samples?r.averageMemoryMiB:null,' MiB');
  metric('memoryPeak',has&&r.samples?r.peakMemoryMiB:null,' MiB');
- $('childProcessesObserved').textContent=state.status.childProcessMonitoringAvailable&&!state.status.childProcessMonitoringError?fmt(state.status.childProcessesObserved||0):'Unknown';
- const images=state.status.childProcessImages||[];
- $('childProcessImages').textContent=images.length?'Observed images: '+images.join(', '):'No direct child processes seen in samples.';
+ const available=!!state.status.childProcessMonitoringAvailable&&!state.status.childProcessMonitoringError;
+ $('childProcessesObserved').textContent=available?fmt(state.status.childProcessesObserved||0):'Unknown';
+ $('childProcessesExpected').textContent=available?fmt(state.status.childProcessesExpected||0):'Unknown';
+ $('childProcessesUnexpected').textContent=available?fmt(state.status.childProcessesUnexpected||0):'Unknown';
+ const children=state.status.childProcessEntries||[];
+ $('childProcessImages').textContent=children.length?
+    children.map(c=>c.image+' (PID '+c.pid+', '+(c.classification==='expected-webview2'?'expected signed WebView2 UI child':c.classification==='unverified-webview2'?'unverified WebView2 identity':'unexpected')+')').join(' · '):
+    'No direct children observed in samples; very short-lived children may be missed.';
  $('resourceState').textContent=state.connectionLosses>=3?'Disconnected — last known readings':(!has?'No scan yet':(state.status.active?'Live · '+fmt(r.samples||0)+' samples':'Completed · '+fmt(r.samples||0)+' samples'));
 }
 function renderStatus(){
@@ -609,7 +616,7 @@ document.querySelectorAll('[name=engine]').forEach(e=>e.onchange=updateEngine);
 $('scan').onclick=start;$('cancel').onclick=async()=>{try{await api('/api/stop',{})}catch(e){toastError(e)}};
 $('windowsSecurity').onclick=async()=>{try{await api('/api/security',{})}catch(e){toastError(e)}};
 $('exit').onclick=async()=>{if(!confirm('Exit SentinelGuard? Scanning, if active, will stop.'))return;try{await api('/api/exit',{});document.body.innerHTML='<main style="max-width:600px;margin:100px auto;padding:30px;color:#cbd5e1;font:18px system-ui"><h2>SentinelGuard closed.</h2><p>You can close this browser tab. Restart SentinelGuard.exe to run another scan.</p></main>'}catch(e){toastError(e)}};
-$('export').onclick=()=>{const a=document.createElement('a');a.href='/api/report?token='+encodeURIComponent(TOKEN)+($('exportRedact').checked?'&redact=1':'');a.download='SentinelGuard_v4.2_Report.json';document.body.appendChild(a);a.click();a.remove()};
+$('export').onclick=()=>{const a=document.createElement('a');a.href='/api/report?token='+encodeURIComponent(TOKEN)+($('scanExportRedact').checked?'&redact=1':'');a.download='SentinelGuard_v4.2_Scan_Findings.json';document.body.appendChild(a);a.click();a.remove()};
 $('refreshVault').onclick=refreshVault;document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>tabs(b.dataset.tab));
 async function poll(){await refresh();setTimeout(poll,1000)}
 poll();refreshVault();

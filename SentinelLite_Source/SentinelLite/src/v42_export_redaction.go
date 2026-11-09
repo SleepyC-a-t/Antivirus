@@ -39,9 +39,9 @@ func v42RedactReport(source any)(any,error){
     return out
   case string:
     switch strings.ToLower(key){
-    case "path","current","name","watchedfolders":
+    case "path","current","name","watchedfolders","executablepath","image","childprocessimages":
       if typed==""{return ""}
-      if strings.ToLower(key)=="name" {
+      if strings.ToLower(key)=="name" || strings.ToLower(key)=="image" || strings.ToLower(key)=="childprocessimages" {
           return tag(typed)+strings.ToLower(filepath.Ext(typed))
       }
       return tag(typed)

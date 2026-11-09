@@ -10,6 +10,7 @@ import (
  "math"
  "os"
  "path/filepath"
+ "regexp"
  "strings"
  "unicode/utf16"
 )
@@ -100,21 +101,108 @@ func v42PEIndicators(imported map[string]bool,highEntropy,packed,overlay bool)(i
  }
  return addition,why
 }
+// Operate only on PDF dictionary syntax outside comments and literal strings.
+// This is bounded lexical inspection, not a full PDF parser or stream decoder.
+var pdfDictOpenAction = regexp.MustCompile(`(?i)/OpenAction(?:\s|/|>|$)`)
+var pdfDictJavaScript = regexp.MustCompile(`(?i)/S\s*/JavaScript(?:\s|/|>|$)`)
+var pdfDictJSKey = regexp.MustCompile(`(?i)/JS(?:\s|/|>|$)`)
+var pdfDictLaunch = regexp.MustCompile(`(?i)/S\s*/Launch(?:\s|/|>|$)`)
+var pdfDictFileKey = regexp.MustCompile(`(?i)/F(?:\s|\(|/|<|$)`)
+var pdfDictFileTarget = regexp.MustCompile(`(?i)^/F\s*(?:\((?:[^\\)]|\\.){1,256}\.(?:exe|cmd|ps1)\)|/[^\s<>\[\]()]{1,256}\.(?:exe|cmd|ps1))`)
+
+type pdfActionDict struct{ raw,syntax []byte }
+
+// pdfMaskCommentAndStringBytes preserves offsets while neutralizing apparent
+// PDF operators inside titles, literal strings, hex data and comments.
+func pdfMaskCommentAndStringBytes(buf []byte) []byte {
+ out:=append([]byte(nil),buf...)
+ comment:=false
+ literalDepth:=0
+ hexString:=false
+ escaped:=false
+ for i,c:=range buf{
+  if comment{
+   out[i]=' '
+   if c=='\r'||c=='\n'{comment=false}
+   continue
+  }
+  if literalDepth>0{
+   out[i]=' '
+   if escaped{escaped=false;continue}
+   if c=='\\'{escaped=true;continue}
+   if c=='(' {literalDepth++}
+   if c==')' {literalDepth--}
+   continue
+  }
+  if hexString{
+   out[i]=' '
+   if c=='>'{hexString=false}
+   continue
+  }
+  if c=='%' {comment=true;out[i]=' ';continue}
+  if c=='(' {literalDepth=1;out[i]=' ';continue}
+  if c=='<' && (i+1>=len(buf)||buf[i+1]!='<') {
+   // The first '<' of a dictionary and its matching '>' remain visible;
+   // the inside of a PDF hex string is not actionable PDF syntax.
+   if i==0||buf[i-1]!='<'{hexString=true;out[i]=' '}
+  }
+ }
+ return out
+}
+
+func pdfActionDictionaries(buf []byte) []pdfActionDict{
+ const maxDictBytes=8192
+ syntax:=pdfMaskCommentAndStringBytes(buf)
+ dicts:=make([]pdfActionDict,0,8)
+ starts:=make([]int,0,4)
+ for i:=0;i+1<len(syntax);i++{
+  if syntax[i]=='<'&&syntax[i+1]=='<'{
+   if len(starts)<8{starts=append(starts,i)}
+   i++
+   continue
+  }
+  if syntax[i]=='>'&&syntax[i+1]=='>'{
+   if n:=len(starts);n>0{
+    start:=starts[n-1]
+    starts=starts[:n-1]
+    if i+2-start<=maxDictBytes {
+     dicts=append(dicts,pdfActionDict{raw:buf[start:i+2],syntax:syntax[start:i+2]})
+    }
+   }
+   i++
+  }
+ }
+ return dicts
+}
 func inspectV42PDF(buf []byte,score *int,reasons *[]string){
  if len(buf)<16||!bytes.HasPrefix(buf,[]byte("%PDF-")){return}
- // PDF parser here is limited structural token triage, not full object-stream
- // decompression. Correlate launch/JavaScript action dictionaries to avoid
- // flagging manuals that merely mention JavaScript.
- lower:=bytes.ToLower(buf)
- if bytes.Contains(lower,[]byte("/openaction"))&&
-    bytes.Contains(lower,[]byte("/javascript"))&&bytes.Contains(lower,[]byte("/js")){
-   *score+=52
-   *reasons=append(*reasons,"PDF contains document-open JavaScript action tokens (static document structure, not proof of exploit)")
+ dicts:=pdfActionDictionaries(buf)
+ hasOpenAction:=false
+ hasJavaScriptAction:=false
+ hasExecutableLaunch:=false
+ for _,d:=range dicts{
+  if pdfDictOpenAction.Match(d.syntax){hasOpenAction=true}
+  if pdfDictJavaScript.Match(d.syntax)&&pdfDictJSKey.Match(d.syntax){
+   hasJavaScriptAction=true
+  }
+  if pdfDictLaunch.Match(d.syntax){
+   // /F must itself be real dictionary syntax. Only then examine the
+   // immediately following raw file-spec string for an executable suffix.
+   for _,loc:=range pdfDictFileKey.FindAllIndex(d.syntax,12){
+    if pdfDictFileTarget.Match(d.raw[loc[0]:]){
+     hasExecutableLaunch=true
+     break
+    }
+   }
+  }
  }
- if bytes.Contains(lower,[]byte("/launch"))&&
-    (bytes.Contains(lower,[]byte(".exe"))||bytes.Contains(lower,[]byte(".cmd"))||bytes.Contains(lower,[]byte(".ps1"))){
-   *score+=51
-   *reasons=append(*reasons,"PDF launch action references an executable or script target")
+ if hasOpenAction&&hasJavaScriptAction{
+  *score+=52
+  *reasons=append(*reasons,"PDF has document-open and JavaScript action dictionaries (limited structural inspection, not proof of exploit)")
+ }
+ if hasExecutableLaunch{
+  *score+=51
+  *reasons=append(*reasons,"PDF has a launch-action dictionary referencing an executable or script")
  }
 }
 func v42LNKString(buf []byte,pos *int,unicode bool)(string,error){

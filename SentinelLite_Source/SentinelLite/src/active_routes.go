@@ -76,7 +76,7 @@ func registerActiveRoutes(mux *http.ServeMux,s *Server){
     mux.HandleFunc("/api/active/report",func(w http.ResponseWriter,r *http.Request){
         if r.Method!=http.MethodGet{http.Error(w,"GET required",405);return}
         w.Header().Set("Content-Disposition",`attachment; filename="SentinelGuard_v4.2_Live_Report.json"`)
-        report:=map[string]any{"product":appEdition,"version":appVersion,"exportedAt":time.Now(),"status":s.active.snapshot(),"privacy":"Contains absolute file paths, scan detection reasons and local timestamps. No internet history, passwords, cookies or uploaded file contents."}
+        report:=map[string]any{"product":appEdition,"version":appVersion,"reportKind":"liveProtectionStatus","exportedAt":time.Now(),"status":s.active.snapshot(),"privacy":"Contains absolute file paths, scan detection reasons and local timestamps. No internet history, passwords, cookies or uploaded file contents."}
         if r.URL.Query().Get("redact")=="1"{
             masked,err:=v42RedactReport(report)
             if err!=nil{apiError(w,500,err);return}
