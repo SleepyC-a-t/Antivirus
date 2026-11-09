@@ -422,8 +422,8 @@ func (s *Server) routes() http.Handler {
 		st, fs := s.app.snapshot()
 		skippedPaths := s.app.skippedSnapshot()
 		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Content-Disposition", `attachment; filename="SentinelGuard_v4.2_Report.json"`)
-		report:=map[string]any{"product": "SentinelGuard", "version": appVersion, "exportedAt": time.Now(), "status": st, "findings": fs, "skippedPaths": skippedPaths, "notice": "These findings may be false positives. Defender scans are separate from heuristic scans."}
+		w.Header().Set("Content-Disposition", `attachment; filename="SentinelGuard_v4.2_Scan_Findings.json"`)
+		report:=map[string]any{"product": "SentinelGuard", "version": appVersion, "exportedAt": time.Now(), "status": st, "findings": fs, "findingReasonsSummary": summarizeFindingReasons(fs), "reportKind": "manualScanFindings", "skippedPaths": skippedPaths, "notice": "These findings may be false positives. Defender scans are separate from heuristic scans."}
         if s.active!=nil {report["liveProtection"]=s.active.snapshot()}
         if r.URL.Query().Get("redact")=="1"{
             masked,err:=v42RedactReport(report)
