@@ -1,0 +1,38 @@
+name: SentinelGuard — 75 inert technique scenarios
+on:
+  push:
+    branches: [sentinelguard-v42-inert-benchmark-2026]
+    paths:
+      - 'SentinelLite_Source/SentinelLite/src/**'
+      - '.github/workflows/sentinelguard-inert-spectrum.yml'
+  pull_request:
+    paths:
+      - 'SentinelLite_Source/SentinelLite/src/**'
+      - '.github/workflows/sentinelguard-inert-spectrum.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  spectrum:
+    runs-on: windows-2025
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: SentinelLite_Source/SentinelLite/src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: SentinelLite_Source/SentinelLite/src/go.mod
+          cache: false
+      - name: Test public-technique-informed synthetic corpus without executing files
+        run: |
+          go test -count=1 -run '^TestV48PublicTechniqueInertSpectrum$' -v . *>&1 | Tee-Object -FilePath $env:RUNNER_TEMP\inert-spectrum-results.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Inert corpus could not be evaluated' }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: SentinelGuard-Inert-Spectrum-Results
+          path: ${{ runner.temp }}/inert-spectrum-results.txt
+          retention-days: 15
