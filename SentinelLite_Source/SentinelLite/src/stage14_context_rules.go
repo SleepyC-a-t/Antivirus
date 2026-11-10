@@ -26,7 +26,7 @@ var stage14DownloadCmdSameLine = regexp.MustCompile("(?i)\\b(?:downloadstring|do
 
 func stage14PythonActiveInjection(src string) bool {
     code := codeOnlyForSignals(src)
-    locations := make([][]int, 3)
+    locations := make([][][]int, 3)
     for i, r := range stage14PyInjectionNames {
         locations[i] = r.FindAllStringIndex(code, 64)
         if len(locations[i]) == 0 { return false }
