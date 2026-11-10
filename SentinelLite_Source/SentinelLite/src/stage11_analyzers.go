@@ -76,8 +76,9 @@ func inspectStage11Content(name,ext string,data []byte,score *int,reasons *[]str
     case ".html",".htm":
         // HTML smuggling is also used legitimately to export generated data:
         // require a combination of encoded payload and forced file download.
-        if strings.Contains(lower,"atob(") && strings.Contains(lower,"new blob(") &&
-            strings.Contains(lower,"createobjecturl(") && strings.Contains(lower,".click(") {
+        // Only an active chain within a single inline script is meaningful;
+        // large pages can contain those tokens in unrelated code or prose.
+        if stage14HTMLDecodedAutoDownload(src) {
             add(58,"HTML constructs and downloads a file from decoded data (potential HTML smuggling)")
         }
     case ".vbs",".vbe":
