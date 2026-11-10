@@ -9,6 +9,7 @@ import (
  "sort"
  "strings"
  "testing"
+ "time"
 )
 
 // Prospective, read-only expected-benign PE survey. Not a representative
@@ -16,6 +17,11 @@ import (
 // disclose exactly where a 48-point import combination occurs; game launchers
 // are counted only if they are actually installed on the Windows CI runner.
 func TestSecurityThirdPartyPEImport48PointRuleSurvey(t *testing.T) {
+ // This is a bounded, best-effort benign import survey, not an exhaustive
+ // measurement. On heavily provisioned CI hosts a recursive directory walk
+ // can exceed the overall unit-test timeout without improving coverage.
+ deadline:=time.Now().Add(150*time.Second)
+ timedOut:=false
  pf:=os.Getenv("ProgramFiles")
  pf86:=os.Getenv("ProgramFiles(x86)")
  la:=os.Getenv("LOCALAPPDATA")
@@ -32,6 +38,7 @@ func TestSecurityThirdPartyPEImport48PointRuleSurvey(t *testing.T) {
  }
  all,allFlags:=0,0
  for _,root:=range roots{
+  if time.Now().After(deadline) {timedOut=true; t.Logf("PE_BENIGN_SURVEY root=%q NOT_SAMPLED_TIME_BUDGET",root.label);continue}
   if root.path==""{continue}
   stat,err:=os.Stat(root.path)
   if err!=nil||!stat.IsDir(){
@@ -41,6 +48,7 @@ func TestSecurityThirdPartyPEImport48PointRuleSurvey(t *testing.T) {
   candidates:=[]string{}
   unreadable:=0
   _=filepath.WalkDir(root.path,func(p string,d os.DirEntry,err error)error{
+   if time.Now().After(deadline) {timedOut=true;return filepath.SkipAll}
    if err!=nil{unreadable++;return nil}
    if d.IsDir() {if p!=root.path&&isReparse(p){return filepath.SkipDir};return nil}
    if d.Type()&os.ModeSymlink!=0||isReparse(p){return nil}
@@ -53,6 +61,7 @@ func TestSecurityThirdPartyPEImport48PointRuleSurvey(t *testing.T) {
   sort.Strings(candidates)
   checked,positive:=0,0
   for _,file:=range candidates{
+   if time.Now().After(deadline) {timedOut=true;break}
    st,err:=os.Stat(file)
    if err!=nil||st.Size()>64*1024*1024||!st.Mode().IsRegular(){unreadable++;continue}
    image,err:=pe.Open(file)
@@ -72,6 +81,6 @@ func TestSecurityThirdPartyPEImport48PointRuleSurvey(t *testing.T) {
   all+=checked;allFlags+=positive
   t.Logf("PE_BENIGN_SURVEY root=%q peParsed=%d tripleImportAdvisories=%d skippedOrUnreadable=%d",root.label,checked,positive,unreadable)
  }
- t.Logf("PE_BENIGN_SURVEY_TOTAL peParsed=%d tripleImportAdvisories=%d expectedBenignOnly=true samplingNonrandom=true",all,allFlags)
+ t.Logf("PE_BENIGN_SURVEY_TOTAL peParsed=%d tripleImportAdvisories=%d expectedBenignOnly=true samplingNonrandom=true timeBudgetReached=%t",all,allFlags,timedOut)
  if all<20{t.Fatal("insufficient Windows benign PE imports tested")}
 }
