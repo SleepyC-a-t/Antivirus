@@ -92,6 +92,11 @@ func inspectThreatBehavior(data []byte, ext string, score *int, reasons *[]strin
 		// candidates in the observed clean-machine scan. Stage 8 evaluates
 		// them as tightly scoped command patterns, not unrelated substrings.
 		if stage8ContextualRule(rule.label) {continue}
+		// Python source frequently quotes Windows injection APIs in examples
+		// or tests. Require real, locally corroborated call sites in Python.
+		// Preserve existing PowerShell/CMD detection and severity unchanged.
+		if rule.label == "Contains a process-injection API sequence" && ext == ".py" &&
+			!stage14PythonActiveInjection(decoded) {continue}
 		// Restrict rules to executable / script-like files, not static prose.
 		if !isThreatScriptExtension(ext) {continue}
 		// Evaluate code tokens; some commands embed important parameters in
