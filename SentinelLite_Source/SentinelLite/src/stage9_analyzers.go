@@ -150,14 +150,14 @@ func inspectStage9Content(name, ext string, data []byte, score *int, reasons *[]
 			(strings.Contains(code,"requests.post(") || strings.Contains(code,"urlopen(")) {
 			add(88,"Credential access and exfiltration: browser database read combined with outbound transfer")
 		}
-		if strings.Contains(code,"socket.socket(") && strings.Contains(code,".connect(") &&
-			strings.Contains(code,".recv(") &&
-			(strings.Contains(code,"subprocess.run(") || strings.Contains(code,"subprocess.popen(")) &&
-			strings.Contains(code,".send(") {
+		// The same socket must receive a command, launch a subprocess and
+		// return its output nearby; unrelated APIs across big files are weak.
+		if stage14PythonRemoteCommand(src) {
 			add(90,"Remote control: socket command loop invokes subprocess and sends results")
 		}
-		if (strings.Contains(code,"socket.gethostbyname(") || strings.Contains(code,"socket.getaddrinfo(")) &&
-			strings.Contains(code,".hex(") && strings.Contains(code,"for ") {
+		// Require encoded data to feed the DNS resolver inside a bounded
+		// loop, rather than treating scattered source tokens as exfiltration.
+		if stage14PythonEncodedDNS(src) {
 			add(52,"Network anomaly: programmatically resolves encoded data-bearing DNS labels")
 		}
 	case ".js", ".jse":
