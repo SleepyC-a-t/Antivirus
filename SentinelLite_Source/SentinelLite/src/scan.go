@@ -653,7 +653,9 @@ func inspectScript(buf []byte, score *int, reasons *[]string) {
 	}
 	download := strings.Contains(lower, "downloadstring") || strings.Contains(lower, "downloadfile") || strings.Contains(lower, "downloaddata") || strings.Contains(lower, "invoke-restmethod") || strings.Contains(lower, "invoke-webrequest") || strings.Contains(lower, "new-object net.webclient") || strings.Contains(lower, "start-bitstransfer")
 	execute := executeScriptPattern.MatchString(lower) || strings.Contains(lower, "scriptblock]::create")
-	if download && execute {
+	// Require a local download-and-interpreter expression rather than two
+	// unrelated words spread across a large JS bundle or script file.
+	if download && execute && stage14DirectInterpreterDownloadExecution(lower, ".ps1") {
 		add(85, "Downloads remote content and directly executes it")
 	}
 	if pipeInterpreterPattern.MatchString(lower) {
