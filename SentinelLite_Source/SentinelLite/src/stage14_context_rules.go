@@ -23,6 +23,7 @@ var stage14InlineScript = regexp.MustCompile("(?is)<script\\b[^>]{0,800}>(.*?)</
 var stage14IEXDownload = regexp.MustCompile("(?i)\\b(?:iex|invoke-expression)[ \\t]*\\(?[^\\r\\n]{0,500}\\b(?:downloadstring|downloaddata|downloadfile)[ \\t]*\\(")
 var stage14DownloadedPipeIEX = regexp.MustCompile("(?i)\\b(?:invoke-webrequest|invoke-restmethod)[^\\r\\n]{0,500}\\|[ \\t]*(?:iex|invoke-expression)\\b")
 var stage14DownloadCmdSameLine = regexp.MustCompile("(?i)\\b(?:downloadstring|downloaddata|downloadfile)[ \\t]*\\([^\\r\\n]{0,400}\\|[ \\t]*(?:iex|invoke-expression)\\b")
+var stage14ScriptBlockDownload = regexp.MustCompile("(?i)\\bscriptblock\\][ \\t]*::[ \\t]*create[ \\t]*\\([^\\r\\n]{0,500}\\b(?:downloaddata|downloadstring)[ \\t]*\\(")
 
 func stage14PythonActiveInjection(src string) bool {
     code := codeOnlyForSignals(src)
@@ -119,7 +120,8 @@ func stage14DirectInterpreterDownloadExecution(code,ext string) bool {
     case ".ps1",".psm1",".cmd",".bat",".hta",".wsf",".vbs",".vbe":
         return stage14IEXDownload.MatchString(code) ||
             stage14DownloadedPipeIEX.MatchString(code) ||
-            stage14DownloadCmdSameLine.MatchString(code)
+            stage14DownloadCmdSameLine.MatchString(code) ||
+            stage14ScriptBlockDownload.MatchString(code)
     default:
         return false
     }
