@@ -19,7 +19,7 @@ var stage14PyInjectionNames = []*regexp.Regexp{
     regexp.MustCompile("(?i)\\bwriteprocessmemory[ \\t]*\\("),
     regexp.MustCompile("(?i)\\bcreateremotethread[ \\t]*\\("),
 }
-var stage14InlineScript = regexp.MustCompile("(?is)<script\\b[^>]{0,1200}>(.*?)</script[ \\t]*>")
+var stage14InlineScript = regexp.MustCompile("(?is)<script\\b[^>]{0,800}>(.*?)</script[ \\t]*>")
 var stage14IEXDownload = regexp.MustCompile("(?i)\\b(?:iex|invoke-expression)[ \\t]*\\(?[^\\r\\n]{0,500}\\b(?:downloadstring|downloaddata|downloadfile)[ \\t]*\\(")
 var stage14DownloadedPipeIEX = regexp.MustCompile("(?i)\\b(?:invoke-webrequest|invoke-restmethod)[^\\r\\n]{0,500}\\|[ \\t]*(?:iex|invoke-expression)\\b")
 var stage14DownloadCmdSameLine = regexp.MustCompile("(?i)\\b(?:downloadstring|downloaddata|downloadfile)[ \\t]*\\([^\\r\\n]{0,400}\\|[ \\t]*(?:iex|invoke-expression)\\b")
